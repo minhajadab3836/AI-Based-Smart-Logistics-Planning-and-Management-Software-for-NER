@@ -28,7 +28,7 @@ class RouteRequest(BaseModel):
     customers: List[Location]
     truck_capacity: int = 100
     avoid_hazards: Optional[List[str]] = []
-    request_type: Optional[str] = "primary" # "primary" or "alternate"
+    request_type: Optional[str] = "primary"
 
 class HazardRequest(BaseModel):
     lat: float
@@ -48,7 +48,7 @@ HAZARD_ZONES = [
 ]
 
 def haversine(lat1, lon1, lat2, lon2):
-    R = 6371.0 # Earth radius in km
+    R = 6371.0
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
     a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
@@ -80,23 +80,25 @@ def predict_hazard(req: HazardRequest):
         "overall_risk": max_risk
     }
 
-# PRIMARY ROUTE: Guwahati -> Shillong -> Jowai -> Haflong (Landslide Area) -> Silchar Destination
-PRIMARY_GUWAHATI_SILCHAR = [
-    {"lat": 26.1445, "lng": 91.7362}, # Guwahati Depot
+# PRIMARY ROUTE: Cooch Behar -> Bongaigaon -> Guwahati (Warning Point) -> Shillong -> Jowai -> Haflong (Landslide) -> Silchar Destination
+PRIMARY_COOCHBEHAR_SILCHAR = [
+    {"lat": 26.3452, "lng": 89.4482}, # Cooch Behar Start (Green)
+    {"lat": 26.4712, "lng": 90.5583}, # Bongaigaon
+    {"lat": 26.1445, "lng": 91.7362}, # Guwahati Junction (WARNING TRIGGER AT GUWAHATI!)
     {"lat": 25.5783, "lng": 91.8933}, # Shillong
     {"lat": 25.4530, "lng": 92.0640}, # Jowai
-    {"lat": 25.1800, "lng": 93.0100}, # Haflong (LANDSLIDE AREA)
-    {"lat": 24.8333, "lng": 92.7789}, # Silchar Destination
+    {"lat": 25.1800, "lng": 93.0100}, # Haflong (BLOCKED LANDSLIDE)
+    {"lat": 24.8333, "lng": 92.7789}, # Silchar Destination (Green - NO LANDSLIDE)
 ]
 
 # ALTERNATE ROUTE: Guwahati -> Jagiroad -> Nagaon -> Hojai/Lanka -> Kalain -> Silchar Destination (Bypassing Haflong)
 ALTERNATE_GUWAHATI_SILCHAR = [
-    {"lat": 26.1445, "lng": 91.7362}, # Guwahati Depot
+    {"lat": 26.1445, "lng": 91.7362}, # Guwahati Junction
     {"lat": 26.2500, "lng": 92.1500}, # Jagiroad Safe Highway
     {"lat": 26.3500, "lng": 92.6800}, # Nagaon Junction
     {"lat": 25.8800, "lng": 92.9500}, # Hojai / Lanka Bypass
     {"lat": 24.9800, "lng": 92.5800}, # Kalain Entry
-    {"lat": 24.8333, "lng": 92.7789}, # Silchar Destination (Bypasses Haflong 25.18, 93.01 completely!)
+    {"lat": 24.8333, "lng": 92.7789}, # Silchar Destination (Green - NO LANDSLIDE)
 ]
 
 def calc_dist(waypoints):
@@ -107,7 +109,6 @@ def calc_dist(waypoints):
 
 @app.post("/calculate_route")
 def calculate_route(req: RouteRequest):
-    # Check if request explicitly asks for alternate route or avoids Haflong / Landslide
     is_alternate_requested = req.request_type == "alternate"
     if req.avoid_hazards:
         avoid_str = " ".join(req.avoid_hazards).lower()
@@ -117,25 +118,24 @@ def calculate_route(req: RouteRequest):
     if is_alternate_requested:
         dist = calc_dist(ALTERNATE_GUWAHATI_SILCHAR)
         return {
-            "routes": [["Jagiroad", "Nagaon", "Hojai", "Kalain", "Silchar"]],
+            "routes": [["Guwahati", "Jagiroad", "Nagaon", "Hojai", "Kalain", "Silchar"]],
             "total_distance_km": dist,
             "waypoints": [ALTERNATE_GUWAHATI_SILCHAR],
             "is_alternate": True,
             "bypassed_hazard": "Haflong Landslide Area (Blocked)",
-            "origin": "Guwahati",
+            "origin": "Cooch Behar",
             "destination": "Silchar",
-            "message": "ALTERNATE ROUTE: Bypassing Haflong landslide via Nagaon-Hojai safe corridor to reach Silchar."
+            "message": "ALTERNATE BYPASS ROUTE: Bypassing Haflong landslide at Guwahati via Nagaon-Hojai safe corridor to reach Silchar."
         }
 
-    # Otherwise return PRIMARY normal route (Guwahati -> Haflong -> Silchar)
-    dist = calc_dist(PRIMARY_GUWAHATI_SILCHAR)
+    dist = calc_dist(PRIMARY_COOCHBEHAR_SILCHAR)
     return {
-        "routes": [["Shillong", "Jowai", "Haflong", "Silchar"]],
+        "routes": [["Bongaigaon", "Guwahati", "Shillong", "Jowai", "Haflong", "Silchar"]],
         "total_distance_km": dist,
-        "waypoints": [PRIMARY_GUWAHATI_SILCHAR],
+        "waypoints": [PRIMARY_COOCHBEHAR_SILCHAR],
         "is_alternate": False,
         "bypassed_hazard": None,
-        "origin": "Guwahati",
+        "origin": "Cooch Behar",
         "destination": "Silchar",
-        "message": "PRIMARY ROUTE: Traveling via Guwahati -> Shillong -> Jowai -> Haflong -> Silchar."
+        "message": "PRIMARY ROUTE: Traveling via Cooch Behar -> Bongaigaon -> Guwahati -> Haflong -> Silchar."
     }

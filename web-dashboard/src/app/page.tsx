@@ -95,7 +95,7 @@ export default function DashboardPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          depot: { id: 'Guwahati Depot', lat: 26.1445, lng: 91.7362, demand: 0 },
+          depot: { id: 'Cooch Behar Depot', lat: 26.3452, lng: 89.4482, demand: 0 },
           customers: [
             { id: 'Silchar Hub', lat: 24.8333, lng: 92.7789, demand: 50 }
           ],
@@ -234,14 +234,16 @@ export default function DashboardPage() {
         fontWeight: 700
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <span style={{ color: '#22c55e' }}>🏁 STARTING CITY: <strong>Guwahati Depot</strong></span>
+          <span style={{ color: '#22c55e' }}>🟢 STARTING CITY: <strong>Cooch Behar Depot</strong></span>
           <span style={{ color: '#64748b' }}>➔</span>
-          <span style={{ color: '#ff6b35' }}>🎯 DESTINATION CITY: <strong>Silchar Hub</strong></span>
+          <span style={{ color: '#0284c7' }}>📍 WARNING POINT: <strong>Guwahati Junction</strong></span>
+          <span style={{ color: '#64748b' }}>➔</span>
+          <span style={{ color: '#22c55e' }}>🟢 DESTINATION CITY: <strong>Silchar Hub</strong></span>
         </div>
 
         <div style={{ display: 'flex', gap: 10 }}>
           <span style={{ color: isAlternateRoute ? '#ff6b35' : '#00d4ff' }}>
-            ACTIVE ROUTE: {isAlternateRoute ? '🔀 Alternate via Nagaon-Hojai (Bypassing Haflong)' : '⚠️ Primary via Haflong (Landslide Affected)'}
+            {isAlternateRoute ? '🔀 Alternate Route via Nagaon-Hojai (Both Routes Displayed)' : '⚠️ Primary Route via Haflong'}
           </span>
         </div>
       </div>
@@ -261,7 +263,7 @@ export default function DashboardPage() {
             <span style={{ fontSize: 24 }}>🚨</span>
             <div>
               <span style={{ color: '#ef4444', fontWeight: 800, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase' }}>
-                FIELD LANDSLIDE INCIDENT REPORTED
+                FIELD LANDSLIDE INCIDENT REPORTED AT GUWAHATI
               </span>
               <h3 style={{ margin: 0, color: '#fff', fontSize: 15, fontWeight: 700 }}>
                 {latestIncident.hazardName} — Reported by {latestIncident.vehicleId}
@@ -349,7 +351,7 @@ export default function DashboardPage() {
                 {isAlternateRoute ? '🔀 ALTERNATE BYPASS ROUTE ACTIVE' : '🚚 PRIMARY DIRECT ROUTE ACTIVE'}
               </div>
               <div style={{ fontSize: 12, color: '#f1f5f9', marginTop: 2 }}>
-                Distance: {routeDistance.toFixed(1)} km (Guwahati ➔ Silchar)
+                Distance: {routeDistance.toFixed(1)} km (Cooch Behar ➔ Silchar)
               </div>
               {routeMessage && (
                 <div style={{ fontSize: 11, color: isAlternateRoute ? '#ff6b35' : '#94a3b8', marginTop: 4 }}>
@@ -389,30 +391,33 @@ export default function DashboardPage() {
           <div className="glass-panel">
             <h2 className="section-title">⚠️ Hazard & Blockage Status</h2>
             <div className="hazard-list">
-              {hazardZones.map((h) => (
-                <div key={h.id} className="hazard-item" style={{
-                  borderLeft: h.status === 'BLOCKED' || (isAlternateRoute && h.id === 'hz9') ? '4px solid #ef4444' : 'none',
-                  backgroundColor: h.status === 'BLOCKED' || (isAlternateRoute && h.id === 'hz9') ? 'rgba(239, 68, 68, 0.15)' : undefined
-                }}>
-                  <div className="hazard-info">
-                    <span className="hazard-name" style={{ color: h.status === 'BLOCKED' || (isAlternateRoute && h.id === 'hz9') ? '#ef4444' : '#fff', fontWeight: h.status === 'BLOCKED' || (isAlternateRoute && h.id === 'hz9') ? 800 : 500 }}>
-                      {h.name} {h.status === 'BLOCKED' || (isAlternateRoute && h.id === 'hz9') ? '🚫 (ROAD BLOCKED)' : ''}
-                    </span>
-                    <div className="risk-bar-container">
-                      <div
-                        className="risk-bar"
-                        style={{
-                          width: `${(h.status === 'BLOCKED' || (isAlternateRoute && h.id === 'hz9') ? 1.0 : h.risk) * 100}%`,
-                          backgroundColor: h.status === 'BLOCKED' || (isAlternateRoute && h.id === 'hz9') ? '#ef4444' : h.risk >= 0.8 ? '#ef4444' : '#ff6b35'
-                        }}
-                      ></div>
+              {hazardZones.map((h) => {
+                if (h.lat === 24.8333 && h.lng === 92.7789) return null; // No landslide at Silchar!
+                return (
+                  <div key={h.id} className="hazard-item" style={{
+                    borderLeft: h.status === 'BLOCKED' || (isAlternateRoute && h.id === 'hz9') ? '4px solid #ef4444' : 'none',
+                    backgroundColor: h.status === 'BLOCKED' || (isAlternateRoute && h.id === 'hz9') ? 'rgba(239, 68, 68, 0.15)' : undefined
+                  }}>
+                    <div className="hazard-info">
+                      <span className="hazard-name" style={{ color: h.status === 'BLOCKED' || (isAlternateRoute && h.id === 'hz9') ? '#ef4444' : '#fff', fontWeight: h.status === 'BLOCKED' || (isAlternateRoute && h.id === 'hz9') ? 800 : 500 }}>
+                        {h.name} {h.status === 'BLOCKED' || (isAlternateRoute && h.id === 'hz9') ? '🚫 (ROAD BLOCKED)' : ''}
+                      </span>
+                      <div className="risk-bar-container">
+                        <div
+                          className="risk-bar"
+                          style={{
+                            width: `${(h.status === 'BLOCKED' || (isAlternateRoute && h.id === 'hz9') ? 1.0 : h.risk) * 100}%`,
+                            backgroundColor: h.status === 'BLOCKED' || (isAlternateRoute && h.id === 'hz9') ? '#ef4444' : h.risk >= 0.8 ? '#ef4444' : '#ff6b35'
+                          }}
+                        ></div>
+                      </div>
                     </div>
+                    <span className={`hazard-badge ${h.status === 'BLOCKED' || (isAlternateRoute && h.id === 'hz9') || h.risk >= 0.8 ? 'high' : 'medium'}`}>
+                      {h.status === 'BLOCKED' || (isAlternateRoute && h.id === 'hz9') ? 'BLOCKED' : h.type}
+                    </span>
                   </div>
-                  <span className={`hazard-badge ${h.status === 'BLOCKED' || (isAlternateRoute && h.id === 'hz9') || h.risk >= 0.8 ? 'high' : 'medium'}`}>
-                    {h.status === 'BLOCKED' || (isAlternateRoute && h.id === 'hz9') ? 'BLOCKED' : h.type}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </aside>

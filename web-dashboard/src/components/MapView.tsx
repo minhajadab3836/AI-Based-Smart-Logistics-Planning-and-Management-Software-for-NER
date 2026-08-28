@@ -40,7 +40,6 @@ interface MapViewProps {
   hazardZones: HazardZone[];
   route: { lat: number; lng: number }[][] | null;
   isAlternate?: boolean;
-  alternateWaypoints?: { lat: number; lng: number }[] | null;
 }
 
 export default function MapView({ vehicles, hazardZones, route, isAlternate }: MapViewProps) {
@@ -76,8 +75,8 @@ export default function MapView({ vehicles, hazardZones, route, isAlternate }: M
           <span>${label}</span>
         </div>
       `,
-      iconSize: [140, 32],
-      iconAnchor: [70, 16]
+      iconSize: [150, 32],
+      iconAnchor: [75, 16]
     });
   };
 
@@ -105,30 +104,32 @@ export default function MapView({ vehicles, hazardZones, route, isAlternate }: M
 
   const vehiclesWithPos = vehicles.filter((v) => v.position !== null);
 
-  const GUWAHATI_DEPOT = { lat: 26.1445, lng: 91.7362 };
+  const COOCHBEHAR_START = { lat: 26.3452, lng: 89.4482 };
+  const GUWAHATI_JUNCTION = { lat: 26.1445, lng: 91.7362 };
   const SILCHAR_DESTINATION = { lat: 24.8333, lng: 92.7789 };
 
-  // Hardcoded Primary vs Alternate Polyline points for clear dual route rendering
   const PRIMARY_POLYLINE: [number, number][] = [
-    [26.1445, 91.7362], // Guwahati
+    [26.3452, 89.4482], // Cooch Behar (Green Start)
+    [26.4712, 90.5583], // Bongaigaon
+    [26.1445, 91.7362], // Guwahati (Warning Trigger)
     [25.5783, 91.8933], // Shillong
     [25.4530, 92.0640], // Jowai
     [25.1800, 93.0100], // Haflong (Blocked Landslide)
-    [24.8333, 92.7789], // Silchar
+    [24.8333, 92.7789], // Silchar (Green Destination)
   ];
 
   const ALTERNATE_POLYLINE: [number, number][] = [
-    [26.1445, 91.7362], // Guwahati
+    [26.1445, 91.7362], // Guwahati Junction
     [26.2500, 92.1500], // Jagiroad
     [26.3500, 92.6800], // Nagaon
     [25.8800, 92.9500], // Hojai / Lanka
     [24.9800, 92.5800], // Kalain
-    [24.8333, 92.7789], // Silchar Destination
+    [24.8333, 92.7789], // Silchar Destination (Green Destination)
   ];
 
   return (
     <MapContainer
-      center={[25.5, 92.5]}
+      center={[25.8, 91.2]}
       zoom={8}
       style={{ height: '100%', width: '100%', zIndex: 1 }}
       zoomControl={true}
@@ -138,23 +139,48 @@ export default function MapView({ vehicles, hazardZones, route, isAlternate }: M
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
 
-      {/* 1. STARTING CITY MARKER: GUWAHATI (GREEN) */}
+      {/* 1. STARTING CITY MARKER: COOCH BEHAR (GREEN) */}
       <Marker
-        position={[GUWAHATI_DEPOT.lat, GUWAHATI_DEPOT.lng]}
-        icon={createGreenCityIcon('START: Guwahati', '🟢 🏁')}
+        position={[COOCHBEHAR_START.lat, COOCHBEHAR_START.lng]}
+        icon={createGreenCityIcon('START: Cooch Behar', '🟢 🏁')}
       >
         <Popup>
           <div style={{ padding: 4 }}>
-            <h4 style={{ margin: 0, color: '#22c55e' }}>🟢 STARTING CITY: Guwahati Depot</h4>
-            <p style={{ margin: '4px 0 0', fontSize: 12 }}>Coordinates: 26.1445° N, 91.7362° E</p>
+            <h4 style={{ margin: 0, color: '#22c55e' }}>🟢 STARTING CITY: Cooch Behar Depot</h4>
+            <p style={{ margin: '4px 0 0', fontSize: 12 }}>Coordinates: 26.3452° N, 89.4482° E</p>
           </div>
         </Popup>
         <Tooltip permanent direction="top" offset={[0, -12]} opacity={0.95}>
-          <strong style={{ color: '#22c55e' }}>🟢 START: Guwahati Depot</strong>
+          <strong style={{ color: '#22c55e' }}>🟢 START: Cooch Behar Depot</strong>
         </Tooltip>
       </Marker>
 
-      {/* 2. DESTINATION CITY MARKER: SILCHAR (GREEN) */}
+      {/* 2. WARNING TRIGGER JUNCTION: GUWAHATI */}
+      <Marker
+        position={[GUWAHATI_JUNCTION.lat, GUWAHATI_JUNCTION.lng]}
+        icon={L.divIcon({
+          className: 'junction-marker',
+          html: `
+            <div style="
+              background: #0284c7;
+              color: #fff;
+              padding: 3px 8px;
+              border-radius: 6px;
+              font-weight: 800;
+              font-size: 10px;
+              box-shadow: 0 0 10px #0284c7;
+              border: 1px solid #fff;
+              white-space: nowrap;
+            ">
+              📍 Warning Point: Guwahati
+            </div>
+          `,
+          iconSize: [140, 26],
+          iconAnchor: [70, 13]
+        })}
+      />
+
+      {/* 3. DESTINATION CITY MARKER: SILCHAR (GREEN - NO LANDSLIDE!) */}
       <Marker
         position={[SILCHAR_DESTINATION.lat, SILCHAR_DESTINATION.lng]}
         icon={createGreenCityIcon('DESTINATION: Silchar', '🟢 🎯')}
@@ -170,7 +196,7 @@ export default function MapView({ vehicles, hazardZones, route, isAlternate }: M
         </Tooltip>
       </Marker>
 
-      {/* 3. PRIMARY ROUTE (Show dashed red line if alternate active, or orange if active) */}
+      {/* 4. PRIMARY ROUTE (Cooch Behar -> Guwahati -> Haflong -> Silchar) */}
       <Polyline
         positions={PRIMARY_POLYLINE}
         pathOptions={{
@@ -180,32 +206,8 @@ export default function MapView({ vehicles, hazardZones, route, isAlternate }: M
           dashArray: '10, 8'
         }}
       />
-      {isAlternate && (
-        <Marker
-          position={PRIMARY_POLYLINE[Math.floor(PRIMARY_POLYLINE.length / 2)]}
-          icon={L.divIcon({
-            className: 'old-route-label',
-            html: `
-              <div style="
-                background: #ef4444;
-                color: #fff;
-                padding: 3px 8px;
-                border-radius: 4px;
-                font-size: 10px;
-                font-weight: 800;
-                box-shadow: 0 0 10px #ef4444;
-                white-space: nowrap;
-              ">
-                ❌ Old Primary Route (Blocked at Haflong Landslide)
-              </div>
-            `,
-            iconSize: [260, 24],
-            iconAnchor: [130, 12]
-          })}
-        />
-      )}
 
-      {/* 4. NEW ALTERNATE ROUTE (Show solid Cyan line when alternate active) */}
+      {/* 5. NEW ALTERNATE ROUTE (Guwahati -> Nagaon -> Hojai -> Silchar) */}
       {isAlternate && (
         <React.Fragment>
           <Polyline
@@ -241,8 +243,11 @@ export default function MapView({ vehicles, hazardZones, route, isAlternate }: M
         </React.Fragment>
       )}
 
-      {/* 5. HAZARD ZONES (Landslides & Calamities in RED/ORANGE) */}
+      {/* 6. HAZARD ZONES (HAFLONG LANDSLIDE & OTHER CALAMITIES IN RED/ORANGE) */}
       {hazardZones.map((h) => {
+        // Exclude any hazard indicator on Silchar coordinates
+        if (h.lat === SILCHAR_DESTINATION.lat && h.lng === SILCHAR_DESTINATION.lng) return null;
+
         const isBlocked = h.status === 'BLOCKED' || (isAlternate && h.id === 'hz9');
         return (
           <Circle
@@ -272,14 +277,14 @@ export default function MapView({ vehicles, hazardZones, route, isAlternate }: M
             </Popup>
             <Tooltip direction="center" permanent opacity={0.85}>
               <span style={{ fontSize: '11px', fontWeight: 700, color: isBlocked ? '#ef4444' : '#fff' }}>
-                {isBlocked ? '🚫 LANDSLIDE BLOCKED' : h.type === 'landslide' ? '⛰️' : '🌊'}
+                {isBlocked ? '🚫 HAFLONG LANDSLIDE' : h.type === 'landslide' ? '⛰️' : '🌊'}
               </span>
             </Tooltip>
           </Circle>
         );
       })}
 
-      {/* 6. VEHICLE MARKERS */}
+      {/* 7. VEHICLE MARKERS */}
       {vehiclesWithPos.map((v) => {
         const pos = v.position!;
         const isActive = Date.now() - new Date(pos.timestamp).getTime() < 60000;

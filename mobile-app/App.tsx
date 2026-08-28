@@ -7,18 +7,20 @@ import { DriverMap } from './src/components/DriverMap';
 import { HazardAlertModal } from './src/components/HazardAlertModal';
 import { OfflineSmsPanel } from './src/components/OfflineSmsPanel';
 
-// 1. PRIMARY ROUTE (via Haflong Landslide Area)
-const PRIMARY_GUWAHATI_SILCHAR = [
-  { lat: 26.1445, lng: 91.7362 }, // Guwahati Start (Green)
+// 1. PRIMARY ROUTE (Cooch Behar -> Bongaigaon -> Guwahati Junction -> Shillong -> Jowai -> Haflong Landslide -> Silchar)
+const PRIMARY_COOCHBEHAR_SILCHAR = [
+  { lat: 26.3452, lng: 89.4482 }, // Cooch Behar Start (Green)
+  { lat: 26.4712, lng: 90.5583 }, // Bongaigaon
+  { lat: 26.1445, lng: 91.7362 }, // Guwahati Junction (WARNING TRIGGER AT GUWAHATI!)
   { lat: 25.5783, lng: 91.8933 }, // Shillong
-  { lat: 25.4530, lng: 92.0640 }, // Jowai (100 KM Ahead of Landslide - Warning Trigger!)
-  { lat: 25.1800, lng: 93.0100 }, // Haflong (BLOCKED LANDSLIDE AREA)
+  { lat: 25.4530, lng: 92.0640 }, // Jowai
+  { lat: 25.1800, lng: 93.0100 }, // Haflong (BLOCKED LANDSLIDE)
   { lat: 24.8333, lng: 92.7789 }, // Silchar Destination (Green)
 ];
 
-// 2. ALTERNATE BYPASS ROUTE (via Nagaon & Hojai Corridor -> Silchar)
+// 2. ALTERNATE BYPASS ROUTE (Guwahati -> Jagiroad -> Nagaon -> Hojai -> Kalain -> Silchar Destination)
 const ALTERNATE_GUWAHATI_SILCHAR = [
-  { lat: 25.4530, lng: 92.0640 }, // Current Location (Jowai / Warning Point)
+  { lat: 26.1445, lng: 91.7362 }, // Guwahati Junction
   { lat: 26.2500, lng: 92.1500 }, // Jagiroad Safe Highway
   { lat: 26.3500, lng: 92.6800 }, // Nagaon Junction
   { lat: 25.8800, lng: 92.9500 }, // Hojai / Lanka Safe Corridor
@@ -27,13 +29,13 @@ const ALTERNATE_GUWAHATI_SILCHAR = [
 ];
 
 export function App() {
-  const [activeWaypoints, setActiveWaypoints] = useState(PRIMARY_GUWAHATI_SILCHAR);
+  const [activeWaypoints, setActiveWaypoints] = useState(PRIMARY_COOCHBEHAR_SILCHAR);
   const [routeIndex, setRouteIndex] = useState(0);
   const [currentPos, setCurrentPos] = useState<GPSPosition>({
-    lat: PRIMARY_GUWAHATI_SILCHAR[0].lat,
-    lng: PRIMARY_GUWAHATI_SILCHAR[0].lng,
+    lat: PRIMARY_COOCHBEHAR_SILCHAR[0].lat,
+    lng: PRIMARY_COOCHBEHAR_SILCHAR[0].lng,
     speed: 0,
-    heading: 135,
+    heading: 90,
     timestamp: new Date().toISOString()
   });
 
@@ -44,8 +46,8 @@ export function App() {
   const [isDriving, setIsDriving] = useState(false);
   const [isAlternateActive, setIsAlternateActive] = useState(false);
   const [showBothRoutes, setShowBothRoutes] = useState(false);
-  const [hasWarned100Km, setHasWarned100Km] = useState(false);
-  const [routeMessage, setRouteMessage] = useState<string>('Click "START TRIP" to begin navigation from Guwahati to Silchar.');
+  const [hasWarnedAtGuwahati, setHasWarnedAtGuwahati] = useState(false);
+  const [routeMessage, setRouteMessage] = useState<string>('Click "START TRIP" to begin navigation from Cooch Behar to Silchar.');
 
   const telemetryServiceRef = useRef<TelemetryService | null>(null);
 
@@ -59,52 +61,68 @@ export function App() {
   const handleStartTrip = () => {
     setTripStarted(true);
     setIsDriving(true);
+    setIsAlternateActive(false);
+    setShowBothRoutes(false);
+    setHasWarnedAtGuwahati(false);
+    setActiveWaypoints(PRIMARY_COOCHBEHAR_SILCHAR);
     setRouteIndex(0);
-    setRouteMessage('▶️ TRIP STARTED: Truck driving on Primary Route via Haflong...');
+    setCurrentPos({
+      lat: PRIMARY_COOCHBEHAR_SILCHAR[0].lat,
+      lng: PRIMARY_COOCHBEHAR_SILCHAR[0].lng,
+      speed: 50,
+      heading: 90,
+      timestamp: new Date().toISOString()
+    });
+    setRouteMessage('▶️ TRIP STARTED: Truck driving from Cooch Behar on Primary Route...');
   };
 
-  // Simulated GPS Movement & Proximity Warning Loop
+  // Simulated GPS Movement & Warning Trigger Loop
   useEffect(() => {
     if (!isDriving || !tripStarted) return;
 
     const interval = setInterval(() => {
       setRouteIndex(prev => {
-        const next = (prev + 1) % activeWaypoints.length;
+        const next = prev + 1;
+
+        // Check if destination Silchar is reached -> Restart process automatically!
+        if (next >= activeWaypoints.length) {
+          setIsDriving(false);
+          setRouteMessage('🎉 DESTINATION REACHED: Silchar Hub! Automatically restarting trip from Cooch Behar...');
+          setTimeout(() => {
+            handleStartTrip();
+          }, 3000);
+          return 0;
+        }
+
         const target = activeWaypoints[next];
         const updatedPos: GPSPosition = {
           lat: target.lat,
           lng: target.lng,
           speed: Math.floor(45 + Math.random() * 15),
-          heading: Math.floor(130 + Math.random() * 30),
+          heading: Math.floor(110 + Math.random() * 20),
           timestamp: new Date().toISOString()
         };
 
         setCurrentPos(updatedPos);
 
-        // Check 100 KM Warning Trigger at Jowai (25.453, 92.064) or before Haflong
-        if (!isAlternateActive && !hasWarned100Km && next === 2) {
-          setHasWarned100Km(true);
-          setIsDriving(false); // Pause drive for driver decision
+        // Check WARNING TRIGGER UPON REACHING GUWAHATI (Lat 26.1445, Lng 91.7362)
+        if (!isAlternateActive && !hasWarnedAtGuwahati && target.lat === 26.1445 && target.lng === 91.7362) {
+          setHasWarnedAtGuwahati(true);
+          setIsDriving(false); // Pause drive at Guwahati for decision
           setActiveAlert({
             zone: {
               id: 'hz9',
-              name: 'Haflong Landslide Zone (100 KM Ahead)',
+              name: 'Haflong Landslide Zone (Road Blocked Ahead)',
               lat: 25.18,
               lng: 93.01,
               radius_km: 15,
               risk: 0.95,
               type: 'landslide'
             },
-            distanceKm: 98.4,
+            distanceKm: 120.5,
             level: 'critical'
           });
-          setRouteMessage('🚨 WARNING: Landslide detected 100 km ahead at Haflong! Request alternate bypass route.');
-        }
-
-        // Check standard hazard proximity
-        const alert = checkHazardProximity(updatedPos);
-        if (alert && !activeAlert) {
-          setActiveAlert(alert);
+          setRouteMessage('🚨 GUWAHATI REACHED: Landslide warning ahead at Haflong! Request alternate bypass route.');
         }
 
         if (telemetryServiceRef.current) {
@@ -116,7 +134,7 @@ export function App() {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [isDriving, tripStarted, mode, activeWaypoints, isAlternateActive, hasWarned100Km, activeAlert]);
+  }, [isDriving, tripStarted, mode, activeWaypoints, isAlternateActive, hasWarnedAtGuwahati]);
 
   // Request & Switch to Alternate Bypass Route
   const handleRequestAlternateRoute = async () => {
@@ -128,11 +146,11 @@ export function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           vehicleId: 'TRUCK-NER-01',
-          hazardName: 'Haflong Landslide Zone (100 KM Ahead)',
+          hazardName: 'Haflong Landslide Zone',
           type: 'landslide',
           lat: 25.18,
           lng: 93.01,
-          details: 'Landslide 100 km ahead at Haflong! Bypassing via Nagaon-Hojai safe corridor to Silchar.'
+          details: 'Landslide at Haflong reported at Guwahati junction! Bypassing via Nagaon-Hojai safe corridor to Silchar.'
         })
       });
 
@@ -141,7 +159,7 @@ export function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          depot: { id: 'Guwahati Depot', lat: 26.1445, lng: 91.7362, demand: 0 },
+          depot: { id: 'Cooch Behar Depot', lat: 26.3452, lng: 89.4482, demand: 0 },
           customers: [
             { id: 'Silchar Hub', lat: 24.8333, lng: 92.7789, demand: 50 }
           ],
@@ -158,7 +176,7 @@ export function App() {
         setActiveWaypoints(ALTERNATE_GUWAHATI_SILCHAR);
         setRouteIndex(0);
         setIsDriving(true); // Resume truck driving on new route!
-        setRouteMessage(`🔀 ALTERNATE BYPASS ACTIVE: Both routes displayed. Truck driving on Cyan route to Silchar (${data.total_distance_km} km total).`);
+        setRouteMessage(`🔀 ALTERNATE BYPASS ACTIVE: Showing both routes. Truck driving on Cyan route to Silchar (${data.total_distance_km} km total).`);
       }
     } catch {
       setActiveAlert(null);
@@ -207,7 +225,7 @@ export function App() {
               NER TRUCK DRIVER MOBILE APP
             </h1>
             <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>
-              🟢 START: Guwahati Depot ➔ 🟢 DESTINATION: Silchar Hub
+              🟢 START: Cooch Behar ➔ 🟢 DESTINATION: Silchar Hub
             </span>
           </div>
         </div>
@@ -301,7 +319,7 @@ export function App() {
           <DriverMap
             currentPos={currentPos}
             hazardZones={NER_HAZARD_ZONES}
-            primaryWaypoints={PRIMARY_GUWAHATI_SILCHAR}
+            primaryWaypoints={PRIMARY_COOCHBEHAR_SILCHAR}
             alternateWaypoints={ALTERNATE_GUWAHATI_SILCHAR}
             mode={mode}
             isAlternateActive={isAlternateActive}
@@ -310,7 +328,7 @@ export function App() {
         </div>
       </div>
 
-      {/* Hazard Proximity & 100 KM Warning Popup */}
+      {/* Hazard Proximity & Guwahati Warning Popup */}
       <HazardAlertModal
         alert={activeAlert}
         onDismiss={() => {
