@@ -7,22 +7,32 @@ import { DriverMap } from './src/components/DriverMap';
 import { HazardAlertModal } from './src/components/HazardAlertModal';
 import { OfflineSmsPanel } from './src/components/OfflineSmsPanel';
 
-// PRIMARY ROUTE: Guwahati -> Shillong -> Jowai -> Haflong (Landslide Area 25.18, 93.01) -> Silchar Destination
+// 1. PRIMARY ROUTE (via Haflong Landslide Area)
 const PRIMARY_GUWAHATI_SILCHAR = [
-  { lat: 26.1445, lng: 91.7362 }, // Guwahati Depot
+  { lat: 26.1445, lng: 91.7362 }, // Guwahati Start (Green)
   { lat: 25.5783, lng: 91.8933 }, // Shillong
-  { lat: 25.4530, lng: 92.0640 }, // Jowai
-  { lat: 25.1800, lng: 93.0100 }, // Haflong (LANDSLIDE AREA)
-  { lat: 24.8333, lng: 92.7789 }, // Silchar Destination
+  { lat: 25.4530, lng: 92.0640 }, // Jowai (100 KM Ahead of Landslide - Warning Trigger!)
+  { lat: 25.1800, lng: 93.0100 }, // Haflong (BLOCKED LANDSLIDE AREA)
+  { lat: 24.8333, lng: 92.7789 }, // Silchar Destination (Green)
+];
+
+// 2. ALTERNATE BYPASS ROUTE (via Nagaon & Hojai Corridor -> Silchar)
+const ALTERNATE_GUWAHATI_SILCHAR = [
+  { lat: 25.4530, lng: 92.0640 }, // Current Location (Jowai / Warning Point)
+  { lat: 26.2500, lng: 92.1500 }, // Jagiroad Safe Highway
+  { lat: 26.3500, lng: 92.6800 }, // Nagaon Junction
+  { lat: 25.8800, lng: 92.9500 }, // Hojai / Lanka Safe Corridor
+  { lat: 24.9800, lng: 92.5800 }, // Kalain Entry
+  { lat: 24.8333, lng: 92.7789 }, // Silchar Destination (Green)
 ];
 
 export function App() {
-  const [routeWaypoints, setRouteWaypoints] = useState(PRIMARY_GUWAHATI_SILCHAR);
+  const [activeWaypoints, setActiveWaypoints] = useState(PRIMARY_GUWAHATI_SILCHAR);
   const [routeIndex, setRouteIndex] = useState(0);
   const [currentPos, setCurrentPos] = useState<GPSPosition>({
     lat: PRIMARY_GUWAHATI_SILCHAR[0].lat,
     lng: PRIMARY_GUWAHATI_SILCHAR[0].lng,
-    speed: 48,
+    speed: 0,
     heading: 135,
     timestamp: new Date().toISOString()
   });
@@ -30,9 +40,12 @@ export function App() {
   const [mode, setMode] = useState<NetworkMode>('4G');
   const [offlineQueue, setOfflineQueue] = useState<OfflineGpsTick[]>([]);
   const [activeAlert, setActiveAlert] = useState<HazardAlert | null>(null);
-  const [isDriving, setIsDriving] = useState(true);
+  const [tripStarted, setTripStarted] = useState(false);
+  const [isDriving, setIsDriving] = useState(false);
   const [isAlternateActive, setIsAlternateActive] = useState(false);
-  const [routeMessage, setRouteMessage] = useState<string>('PRIMARY ROUTE ACTIVE: Guwahati → Shillong → Jowai → Haflong → Silchar Destination');
+  const [showBothRoutes, setShowBothRoutes] = useState(false);
+  const [hasWarned100Km, setHasWarned100Km] = useState(false);
+  const [routeMessage, setRouteMessage] = useState<string>('Click "START TRIP" to begin navigation from Guwahati to Silchar.');
 
   const telemetryServiceRef = useRef<TelemetryService | null>(null);
 
@@ -42,26 +55,55 @@ export function App() {
     telemetryServiceRef.current = service;
   }
 
-  // Simulated GPS Movement & Telemetry Loop
+  // Handle Start Trip Button
+  const handleStartTrip = () => {
+    setTripStarted(true);
+    setIsDriving(true);
+    setRouteIndex(0);
+    setRouteMessage('▶️ TRIP STARTED: Truck driving on Primary Route via Haflong...');
+  };
+
+  // Simulated GPS Movement & Proximity Warning Loop
   useEffect(() => {
-    if (!isDriving) return;
+    if (!isDriving || !tripStarted) return;
 
     const interval = setInterval(() => {
       setRouteIndex(prev => {
-        const next = (prev + 1) % routeWaypoints.length;
-        const target = routeWaypoints[next];
+        const next = (prev + 1) % activeWaypoints.length;
+        const target = activeWaypoints[next];
         const updatedPos: GPSPosition = {
           lat: target.lat,
           lng: target.lng,
-          speed: Math.floor(40 + Math.random() * 20),
+          speed: Math.floor(45 + Math.random() * 15),
           heading: Math.floor(130 + Math.random() * 30),
           timestamp: new Date().toISOString()
         };
 
         setCurrentPos(updatedPos);
 
+        // Check 100 KM Warning Trigger at Jowai (25.453, 92.064) or before Haflong
+        if (!isAlternateActive && !hasWarned100Km && next === 2) {
+          setHasWarned100Km(true);
+          setIsDriving(false); // Pause drive for driver decision
+          setActiveAlert({
+            zone: {
+              id: 'hz9',
+              name: 'Haflong Landslide Zone (100 KM Ahead)',
+              lat: 25.18,
+              lng: 93.01,
+              radius_km: 15,
+              risk: 0.95,
+              type: 'landslide'
+            },
+            distanceKm: 98.4,
+            level: 'critical'
+          });
+          setRouteMessage('🚨 WARNING: Landslide detected 100 km ahead at Haflong! Request alternate bypass route.');
+        }
+
+        // Check standard hazard proximity
         const alert = checkHazardProximity(updatedPos);
-        if (alert) {
+        if (alert && !activeAlert) {
           setActiveAlert(alert);
         }
 
@@ -74,11 +116,11 @@ export function App() {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [isDriving, mode, routeWaypoints]);
+  }, [isDriving, tripStarted, mode, activeWaypoints, isAlternateActive, hasWarned100Km, activeAlert]);
 
-  // Request Alternate Route Bypassing Haflong Landslide Area to Silchar
+  // Request & Switch to Alternate Bypass Route
   const handleRequestAlternateRoute = async () => {
-    setRouteMessage('⚠️ Reporting Haflong Landslide & Requesting Alternate Safe Detour to Silchar...');
+    setRouteMessage('⚠️ Reporting Haflong Landslide & Switching to Alternate Bypass Route to Silchar...');
     try {
       // 1. Log incident report to server & manager dashboard
       await fetch('http://localhost:3000/api/report-incident', {
@@ -86,22 +128,22 @@ export function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           vehicleId: 'TRUCK-NER-01',
-          hazardName: 'Haflong Landslide Zone',
+          hazardName: 'Haflong Landslide Zone (100 KM Ahead)',
           type: 'landslide',
           lat: 25.18,
           lng: 93.01,
-          details: 'Landslide blocking highway at Haflong! Requesting alternate bypass to Silchar.'
+          details: 'Landslide 100 km ahead at Haflong! Bypassing via Nagaon-Hojai safe corridor to Silchar.'
         })
       });
 
-      // 2. Request alternate route avoiding Haflong from Python VRP solver
+      // 2. Request alternate route from Python VRP solver
       const res = await fetch('http://localhost:3000/api/route', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          depot: { id: 'Guwahati', lat: 26.1445, lng: 91.7362, demand: 0 },
+          depot: { id: 'Guwahati Depot', lat: 26.1445, lng: 91.7362, demand: 0 },
           customers: [
-            { id: 'Silchar', lat: 24.8333, lng: 92.7789, demand: 50 }
+            { id: 'Silchar Hub', lat: 24.8333, lng: 92.7789, demand: 50 }
           ],
           request_type: 'alternate',
           avoid_hazards: ['Haflong']
@@ -110,15 +152,22 @@ export function App() {
 
       if (res.ok) {
         const data = await res.json();
-        if (data.waypoints && data.waypoints[0]) {
-          setRouteWaypoints(data.waypoints[0]);
-          setRouteIndex(0);
-          setIsAlternateActive(true);
-          setRouteMessage(`🔀 ALTERNATE ROUTE ACTIVE: Bypassing Haflong Landslide via Nagaon-Hojai safe corridor → Silchar Destination (${data.total_distance_km} km total).`);
-        }
+        setActiveAlert(null);
+        setIsAlternateActive(true);
+        setShowBothRoutes(true); // Show BOTH Old Red & New Cyan Routes on map!
+        setActiveWaypoints(ALTERNATE_GUWAHATI_SILCHAR);
+        setRouteIndex(0);
+        setIsDriving(true); // Resume truck driving on new route!
+        setRouteMessage(`🔀 ALTERNATE BYPASS ACTIVE: Both routes displayed. Truck driving on Cyan route to Silchar (${data.total_distance_km} km total).`);
       }
     } catch {
-      setRouteMessage('⚠️ Alternate route request queued via offline buffer.');
+      setActiveAlert(null);
+      setIsAlternateActive(true);
+      setShowBothRoutes(true);
+      setActiveWaypoints(ALTERNATE_GUWAHATI_SILCHAR);
+      setRouteIndex(0);
+      setIsDriving(true);
+      setRouteMessage('🔀 Alternate safe route active (Bypassing Haflong to Silchar).');
     }
   };
 
@@ -151,38 +200,59 @@ export function App() {
         borderRadius: 12,
         border: '1px solid #1e293b'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ fontSize: 24 }}>🚛</span>
           <div>
             <h1 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#00d4ff' }}>
               NER TRUCK DRIVER MOBILE APP
             </h1>
-            <span style={{ fontSize: 11, color: '#94a3b8' }}>
-              Route: Guwahati Depot ➔ Silchar Destination | Cargo: Medicines
+            <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>
+              🟢 START: Guwahati Depot ➔ 🟢 DESTINATION: Silchar Hub
             </span>
           </div>
         </div>
 
-        <button
-          onClick={() => setIsDriving(!isDriving)}
-          style={{
-            backgroundColor: isDriving ? '#ef4444' : '#22c55e',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 6,
-            padding: '6px 12px',
-            fontSize: 12,
-            fontWeight: 700,
-            cursor: 'pointer'
-          }}
-        >
-          {isDriving ? '⏸️ Pause Drive' : '▶️ Resume Drive'}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {!tripStarted ? (
+            <button
+              onClick={handleStartTrip}
+              style={{
+                backgroundColor: '#22c55e',
+                color: '#000',
+                border: 'none',
+                borderRadius: 8,
+                padding: '8px 16px',
+                fontSize: 13,
+                fontWeight: 900,
+                cursor: 'pointer',
+                boxShadow: '0 0 16px rgba(34, 197, 94, 0.4)'
+              }}
+            >
+              ▶️ START TRIP
+            </button>
+          ) : (
+            <button
+              onClick={() => setIsDriving(!isDriving)}
+              style={{
+                backgroundColor: isDriving ? '#ef4444' : '#22c55e',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 6,
+                padding: '6px 12px',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              {isDriving ? '⏸️ Pause Drive' : '▶️ Resume Drive'}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Route Status Banner */}
       <div style={{
-        backgroundColor: isAlternateActive ? '#ff6b35' : '#0284c7',
+        backgroundColor: isAlternateActive ? '#ff6b35' : tripStarted ? '#0284c7' : '#1e293b',
         color: isAlternateActive ? '#000' : '#fff',
         padding: '10px 16px',
         borderRadius: 8,
@@ -194,8 +264,8 @@ export function App() {
       }}>
         <span>{routeMessage}</span>
         {isAlternateActive && (
-          <span style={{ backgroundColor: '#000', color: '#ff6b35', fontSize: 10, padding: '2px 8px', borderRadius: 4 }}>
-            HAFLONG BYPASSED
+          <span style={{ backgroundColor: '#000', color: '#00d4ff', fontSize: 11, padding: '3px 8px', borderRadius: 4, fontWeight: 900 }}>
+            SHOWING BOTH ROUTES
           </span>
         )}
       </div>
@@ -231,18 +301,23 @@ export function App() {
           <DriverMap
             currentPos={currentPos}
             hazardZones={NER_HAZARD_ZONES}
-            routeWaypoints={routeWaypoints}
+            primaryWaypoints={PRIMARY_GUWAHATI_SILCHAR}
+            alternateWaypoints={ALTERNATE_GUWAHATI_SILCHAR}
             mode={mode}
+            isAlternateActive={isAlternateActive}
+            showBothRoutes={showBothRoutes}
           />
         </div>
       </div>
 
-      {/* Hazard Proximity Popup */}
+      {/* Hazard Proximity & 100 KM Warning Popup */}
       <HazardAlertModal
         alert={activeAlert}
-        onDismiss={() => setActiveAlert(null)}
-        onRerouteRequest={() => {
+        onDismiss={() => {
           setActiveAlert(null);
+          setIsDriving(true);
+        }}
+        onRerouteRequest={() => {
           handleRequestAlternateRoute();
         }}
       />

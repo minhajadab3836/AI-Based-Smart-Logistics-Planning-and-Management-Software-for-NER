@@ -95,9 +95,9 @@ export default function DashboardPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          depot: { id: 'Guwahati', lat: 26.1445, lng: 91.7362, demand: 0 },
+          depot: { id: 'Guwahati Depot', lat: 26.1445, lng: 91.7362, demand: 0 },
           customers: [
-            { id: 'Silchar', lat: 24.8333, lng: 92.7789, demand: 50 }
+            { id: 'Silchar Hub', lat: 24.8333, lng: 92.7789, demand: 50 }
           ],
           request_type: requestType,
           avoid_hazards: requestType === 'alternate' ? ['Haflong'] : []
@@ -112,7 +112,7 @@ export default function DashboardPage() {
           ));
           setRouteDistance(data.total_distance_km);
           setIsAlternateRoute(!!data.is_alternate);
-          setRouteMessage(data.message || (data.is_alternate ? 'Alternate route active bypassing Haflong' : 'Primary route active via Haflong'));
+          setRouteMessage(data.message);
         }
       }
     } catch (e) {
@@ -133,7 +133,6 @@ export default function DashboardPage() {
         if (hazRes.ok) setHazardZones(await hazRes.json());
         if (incRes.ok) setIncidents(await incRes.json());
         fetchStats();
-        // Calculate primary route on load
         calculateRoute('primary');
       } catch {
         setTimeout(fetchInitialData, 3000);
@@ -179,8 +178,6 @@ export default function DashboardPage() {
         const incident: IncidentReport = JSON.parse(e.data);
         setLatestIncident(incident);
         setIncidents((prev) => [incident, ...prev]);
-
-        // Auto trigger alternate route calculation avoiding Haflong landslide
         calculateRoute('alternate');
       });
 
@@ -225,6 +222,30 @@ export default function DashboardPage() {
         </div>
       </header>
 
+      {/* Corridor Banner */}
+      <div style={{
+        backgroundColor: '#0f172a',
+        borderBottom: '1px solid #1e293b',
+        padding: '8px 24px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        fontSize: 13,
+        fontWeight: 700
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <span style={{ color: '#22c55e' }}>🏁 STARTING CITY: <strong>Guwahati Depot</strong></span>
+          <span style={{ color: '#64748b' }}>➔</span>
+          <span style={{ color: '#ff6b35' }}>🎯 DESTINATION CITY: <strong>Silchar Hub</strong></span>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10 }}>
+          <span style={{ color: isAlternateRoute ? '#ff6b35' : '#00d4ff' }}>
+            ACTIVE ROUTE: {isAlternateRoute ? '🔀 Alternate via Nagaon-Hojai (Bypassing Haflong)' : '⚠️ Primary via Haflong (Landslide Affected)'}
+          </span>
+        </div>
+      </div>
+
       {/* Incident Alert Banner */}
       {latestIncident && (
         <div style={{
@@ -240,7 +261,7 @@ export default function DashboardPage() {
             <span style={{ fontSize: 24 }}>🚨</span>
             <div>
               <span style={{ color: '#ef4444', fontWeight: 800, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase' }}>
-                CRITICAL FIELD LANDSLIDE INCIDENT REPORTED
+                FIELD LANDSLIDE INCIDENT REPORTED
               </span>
               <h3 style={{ margin: 0, color: '#fff', fontSize: 15, fontWeight: 700 }}>
                 {latestIncident.hazardName} — Reported by {latestIncident.vehicleId}
@@ -306,7 +327,7 @@ export default function DashboardPage() {
               disabled={routeLoading}
               style={{ opacity: !isAlternateRoute ? 1 : 0.7 }}
             >
-              {routeLoading ? '⏳ Calculating...' : '🗺️ Dispatch Primary Route (via Haflong)'}
+              {routeLoading ? '⏳ Calculating...' : '⚠️ Show Primary Route (via Haflong)'}
             </button>
 
             <button
@@ -328,7 +349,7 @@ export default function DashboardPage() {
                 {isAlternateRoute ? '🔀 ALTERNATE BYPASS ROUTE ACTIVE' : '🚚 PRIMARY DIRECT ROUTE ACTIVE'}
               </div>
               <div style={{ fontSize: 12, color: '#f1f5f9', marginTop: 2 }}>
-                Total Distance: {routeDistance.toFixed(1)} km (Guwahati ➔ Silchar)
+                Distance: {routeDistance.toFixed(1)} km (Guwahati ➔ Silchar)
               </div>
               {routeMessage && (
                 <div style={{ fontSize: 11, color: isAlternateRoute ? '#ff6b35' : '#94a3b8', marginTop: 4 }}>
@@ -397,7 +418,7 @@ export default function DashboardPage() {
         </aside>
 
         <div className="map-container">
-          <MapView vehicles={vehicles} hazardZones={hazardZones} route={route} />
+          <MapView vehicles={vehicles} hazardZones={hazardZones} route={route} isAlternate={isAlternateRoute} />
         </div>
       </main>
     </div>

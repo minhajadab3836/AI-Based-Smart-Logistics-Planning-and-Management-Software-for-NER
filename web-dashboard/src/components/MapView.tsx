@@ -32,17 +32,18 @@ interface HazardZone {
   lng: number;
   radius_km: number;
   risk: number;
+  status?: string;
 }
 
 interface MapViewProps {
   vehicles: Vehicle[];
   hazardZones: HazardZone[];
   route: { lat: number; lng: number }[][] | null;
+  isAlternate?: boolean;
+  alternateWaypoints?: { lat: number; lng: number }[] | null;
 }
 
-const ROUTE_COLORS = ['#00d4ff', '#a855f7', '#22c55e', '#f59e0b', '#ec4899'];
-
-export default function MapView({ vehicles, hazardZones, route }: MapViewProps) {
+export default function MapView({ vehicles, hazardZones, route, isAlternate }: MapViewProps) {
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -52,6 +53,33 @@ export default function MapView({ vehicles, hazardZones, route }: MapViewProps) 
       shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
     });
   }, []);
+
+  const createGreenCityIcon = (label: string, emoji: string) => {
+    return L.divIcon({
+      className: 'green-city-marker',
+      html: `
+        <div style="
+          background: #22c55e;
+          color: #000;
+          padding: 5px 10px;
+          border-radius: 8px;
+          font-weight: 800;
+          font-size: 11px;
+          box-shadow: 0 0 14px #22c55e;
+          border: 2px solid #ffffff;
+          white-space: nowrap;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        ">
+          <span>${emoji}</span>
+          <span>${label}</span>
+        </div>
+      `,
+      iconSize: [140, 32],
+      iconAnchor: [70, 16]
+    });
+  };
 
   const createVehicleIcon = (isActive: boolean, source?: string) => {
     const color = source === 'sms' ? '#ff6b35' : isActive ? '#22c55e' : '#64748b';
@@ -77,10 +105,31 @@ export default function MapView({ vehicles, hazardZones, route }: MapViewProps) 
 
   const vehiclesWithPos = vehicles.filter((v) => v.position !== null);
 
+  const GUWAHATI_DEPOT = { lat: 26.1445, lng: 91.7362 };
+  const SILCHAR_DESTINATION = { lat: 24.8333, lng: 92.7789 };
+
+  // Hardcoded Primary vs Alternate Polyline points for clear dual route rendering
+  const PRIMARY_POLYLINE: [number, number][] = [
+    [26.1445, 91.7362], // Guwahati
+    [25.5783, 91.8933], // Shillong
+    [25.4530, 92.0640], // Jowai
+    [25.1800, 93.0100], // Haflong (Blocked Landslide)
+    [24.8333, 92.7789], // Silchar
+  ];
+
+  const ALTERNATE_POLYLINE: [number, number][] = [
+    [26.1445, 91.7362], // Guwahati
+    [26.2500, 92.1500], // Jagiroad
+    [26.3500, 92.6800], // Nagaon
+    [25.8800, 92.9500], // Hojai / Lanka
+    [24.9800, 92.5800], // Kalain
+    [24.8333, 92.7789], // Silchar Destination
+  ];
+
   return (
     <MapContainer
-      center={[26.2, 92.9]}
-      zoom={7}
+      center={[25.5, 92.5]}
+      zoom={8}
       style={{ height: '100%', width: '100%', zIndex: 1 }}
       zoomControl={true}
     >
@@ -89,56 +138,148 @@ export default function MapView({ vehicles, hazardZones, route }: MapViewProps) 
         url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
       />
 
-      {/* Hazard Zones */}
-      {hazardZones.map((h) => (
-        <Circle
-          key={h.id}
-          center={[h.lat, h.lng]}
-          radius={h.radius_km * 1000}
-          pathOptions={{
-            color: h.risk >= 0.8 ? '#ef4444' : h.risk >= 0.7 ? '#ff6b35' : '#facc15',
-            fillColor: h.risk >= 0.8 ? '#ef4444' : h.risk >= 0.7 ? '#ff6b35' : '#facc15',
-            fillOpacity: 0.15,
-            weight: 2,
-            dashArray: '5, 8',
-          }}
-        >
-          <Popup>
-            <div style={{ padding: '4px', minWidth: '150px' }}>
-              <h3 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 600 }}>
-                ⚠️ {h.name}
-              </h3>
-              <p style={{ margin: '2px 0', fontSize: '12px' }}>Type: {h.type}</p>
-              <p style={{ margin: '2px 0', fontSize: '12px' }}>
-                Risk: <strong style={{ color: h.risk >= 0.8 ? '#ef4444' : '#ff6b35' }}>
-                  {(h.risk * 100).toFixed(0)}%
-                </strong>
-              </p>
-              <p style={{ margin: '2px 0', fontSize: '12px' }}>Radius: {h.radius_km} km</p>
-            </div>
-          </Popup>
-          <Tooltip direction="center" permanent opacity={0.7}>
-            <span style={{ fontSize: '10px' }}>{h.type === 'flood' ? '🌊' : h.type === 'landslide' ? '⛰️' : '❄️'}</span>
-          </Tooltip>
-        </Circle>
-      ))}
+      {/* 1. STARTING CITY MARKER: GUWAHATI (GREEN) */}
+      <Marker
+        position={[GUWAHATI_DEPOT.lat, GUWAHATI_DEPOT.lng]}
+        icon={createGreenCityIcon('START: Guwahati', '🟢 🏁')}
+      >
+        <Popup>
+          <div style={{ padding: 4 }}>
+            <h4 style={{ margin: 0, color: '#22c55e' }}>🟢 STARTING CITY: Guwahati Depot</h4>
+            <p style={{ margin: '4px 0 0', fontSize: 12 }}>Coordinates: 26.1445° N, 91.7362° E</p>
+          </div>
+        </Popup>
+        <Tooltip permanent direction="top" offset={[0, -12]} opacity={0.95}>
+          <strong style={{ color: '#22c55e' }}>🟢 START: Guwahati Depot</strong>
+        </Tooltip>
+      </Marker>
 
-      {/* Route Lines */}
-      {route &&
-        route.map((line, i) => (
+      {/* 2. DESTINATION CITY MARKER: SILCHAR (GREEN) */}
+      <Marker
+        position={[SILCHAR_DESTINATION.lat, SILCHAR_DESTINATION.lng]}
+        icon={createGreenCityIcon('DESTINATION: Silchar', '🟢 🎯')}
+      >
+        <Popup>
+          <div style={{ padding: 4 }}>
+            <h4 style={{ margin: 0, color: '#22c55e' }}>🟢 DESTINATION CITY: Silchar Hub</h4>
+            <p style={{ margin: '4px 0 0', fontSize: 12 }}>Coordinates: 24.8333° N, 92.7789° E</p>
+          </div>
+        </Popup>
+        <Tooltip permanent direction="top" offset={[0, -12]} opacity={0.95}>
+          <strong style={{ color: '#22c55e' }}>🟢 DESTINATION: Silchar Hub</strong>
+        </Tooltip>
+      </Marker>
+
+      {/* 3. PRIMARY ROUTE (Show dashed red line if alternate active, or orange if active) */}
+      <Polyline
+        positions={PRIMARY_POLYLINE}
+        pathOptions={{
+          color: isAlternate ? '#ef4444' : '#ff6b35',
+          weight: isAlternate ? 3 : 5,
+          opacity: isAlternate ? 0.6 : 0.9,
+          dashArray: '10, 8'
+        }}
+      />
+      {isAlternate && (
+        <Marker
+          position={PRIMARY_POLYLINE[Math.floor(PRIMARY_POLYLINE.length / 2)]}
+          icon={L.divIcon({
+            className: 'old-route-label',
+            html: `
+              <div style="
+                background: #ef4444;
+                color: #fff;
+                padding: 3px 8px;
+                border-radius: 4px;
+                font-size: 10px;
+                font-weight: 800;
+                box-shadow: 0 0 10px #ef4444;
+                white-space: nowrap;
+              ">
+                ❌ Old Primary Route (Blocked at Haflong Landslide)
+              </div>
+            `,
+            iconSize: [260, 24],
+            iconAnchor: [130, 12]
+          })}
+        />
+      )}
+
+      {/* 4. NEW ALTERNATE ROUTE (Show solid Cyan line when alternate active) */}
+      {isAlternate && (
+        <React.Fragment>
           <Polyline
-            key={`route-${i}`}
-            positions={line.map((p) => [p.lat, p.lng] as [number, number])}
+            positions={ALTERNATE_POLYLINE}
             pathOptions={{
-              color: ROUTE_COLORS[i % ROUTE_COLORS.length],
-              weight: 4,
-              opacity: 0.8,
-              dashArray: '10, 6',
+              color: '#00d4ff',
+              weight: 6,
+              opacity: 0.95
             }}
           />
-        ))}
+          <Marker
+            position={ALTERNATE_POLYLINE[Math.floor(ALTERNATE_POLYLINE.length / 2)]}
+            icon={L.divIcon({
+              className: 'new-route-label',
+              html: `
+                <div style="
+                  background: #00d4ff;
+                  color: #000;
+                  padding: 4px 10px;
+                  border-radius: 6px;
+                  font-size: 10px;
+                  font-weight: 900;
+                  box-shadow: 0 0 16px #00d4ff;
+                  white-space: nowrap;
+                ">
+                  🔀 New Alternate Bypass Route (via Nagaon-Hojai) ➔ Silchar
+                </div>
+              `,
+              iconSize: [280, 24],
+              iconAnchor: [140, 12]
+            })}
+          />
+        </React.Fragment>
+      )}
 
-      {/* Vehicle Markers */}
+      {/* 5. HAZARD ZONES (Landslides & Calamities in RED/ORANGE) */}
+      {hazardZones.map((h) => {
+        const isBlocked = h.status === 'BLOCKED' || (isAlternate && h.id === 'hz9');
+        return (
+          <Circle
+            key={h.id}
+            center={[h.lat, h.lng]}
+            radius={h.radius_km * 1000}
+            pathOptions={{
+              color: isBlocked ? '#ef4444' : h.risk >= 0.8 ? '#ef4444' : '#ff6b35',
+              fillColor: isBlocked ? '#ef4444' : h.risk >= 0.8 ? '#ef4444' : '#ff6b35',
+              fillOpacity: isBlocked ? 0.4 : 0.15,
+              weight: isBlocked ? 3 : 2,
+              dashArray: isBlocked ? 'none' : '5, 8',
+            }}
+          >
+            <Popup>
+              <div style={{ padding: '4px', minWidth: '160px' }}>
+                <h3 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 700, color: isBlocked ? '#ef4444' : '#fff' }}>
+                  ⚠️ {h.name} {isBlocked ? '🚫 (ROAD BLOCKED)' : ''}
+                </h3>
+                <p style={{ margin: '2px 0', fontSize: '12px' }}>Type: {h.type}</p>
+                <p style={{ margin: '2px 0', fontSize: '12px' }}>
+                  Status: <strong style={{ color: isBlocked ? '#ef4444' : '#22c55e' }}>
+                    {isBlocked ? 'BLOCKED LANDSLIDE AREA' : 'Active Warning'}
+                  </strong>
+                </p>
+              </div>
+            </Popup>
+            <Tooltip direction="center" permanent opacity={0.85}>
+              <span style={{ fontSize: '11px', fontWeight: 700, color: isBlocked ? '#ef4444' : '#fff' }}>
+                {isBlocked ? '🚫 LANDSLIDE BLOCKED' : h.type === 'landslide' ? '⛰️' : '🌊'}
+              </span>
+            </Tooltip>
+          </Circle>
+        );
+      })}
+
+      {/* 6. VEHICLE MARKERS */}
       {vehiclesWithPos.map((v) => {
         const pos = v.position!;
         const isActive = Date.now() - new Date(pos.timestamp).getTime() < 60000;
@@ -159,19 +300,8 @@ export default function MapView({ vehicles, hazardZones, route }: MapViewProps) 
                 <p style={{ margin: '2px 0', fontSize: '12px' }}>
                   ⚡ Speed: {Math.round(pos.speed || 0)} km/h
                 </p>
-                <p style={{ margin: '2px 0', fontSize: '12px' }}>
-                  🧭 Heading: {Math.round(pos.heading || 0)}°
-                </p>
                 <p style={{ margin: '2px 0', fontSize: '10px', color: '#94a3b8' }}>
                   📍 ({pos.lat.toFixed(4)}, {pos.lng.toFixed(4)})
-                </p>
-                <p style={{ margin: '2px 0', fontSize: '10px', color: '#94a3b8' }}>
-                  🕐 {new Date(pos.timestamp).toLocaleTimeString()}
-                  {pos.source === 'sms' && (
-                    <span style={{ marginLeft: '4px', color: '#ff6b35', fontWeight: 600 }}>
-                      [SMS FAILSAFE]
-                    </span>
-                  )}
                 </p>
               </div>
             </Popup>
