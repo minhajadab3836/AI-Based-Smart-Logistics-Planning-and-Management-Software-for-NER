@@ -502,6 +502,7 @@ body {
 .old-route-label,
 .new-route-label,
 .location-marker,
+.hazard-label-marker,
 .driver-truck-icon {
   background: transparent !important;
   border: none !important;

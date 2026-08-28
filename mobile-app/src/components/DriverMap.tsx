@@ -138,23 +138,54 @@ export const DriverMap: React.FC<DriverMapProps> = ({
         />
       )}
 
-      {/* 5. HAZARD ZONES */}
+      {/* 5. HAZARD ZONES (RED CIRCLES WITH EXPLICIT LANDSLIDE BADGES) */}
       {hazardZones.map(h => {
         if (h.lat === SILCHAR_DESTINATION.lat && h.lng === SILCHAR_DESTINATION.lng) return null;
 
         const isBlocked = h.status === 'BLOCKED' || (isAlternateActive && h.id === 'hz9');
+        const iconEmoji = h.type === 'landslide' ? '⛰️' : h.type === 'flood' ? '🌊' : '⚠️';
         return (
-          <Circle
-            key={h.id}
-            center={[h.lat, h.lng]}
-            radius={h.radius_km * 1000}
-            pathOptions={{
-              color: isBlocked ? '#ef4444' : '#ff6b35',
-              fillColor: isBlocked ? '#ef4444' : '#ff6b35',
-              fillOpacity: isBlocked ? 0.4 : 0.2,
-              weight: isBlocked ? 3 : 2
-            }}
-          />
+          <React.Fragment key={h.id}>
+            <Circle
+              center={[h.lat, h.lng]}
+              radius={h.radius_km * 1000}
+              pathOptions={{
+                color: isBlocked ? '#ef4444' : '#ff6b35',
+                fillColor: isBlocked ? '#ef4444' : '#ff6b35',
+                fillOpacity: isBlocked ? 0.45 : 0.2,
+                weight: isBlocked ? 3 : 2
+              }}
+            />
+
+            {/* EXPLICIT LANDSLIDE BADGE MARKER ON RED CIRCLE */}
+            <Marker
+              position={[h.lat, h.lng]}
+              icon={L.divIcon({
+                className: 'hazard-label-marker',
+                html: `
+                  <div style="
+                    background: ${isBlocked ? '#ef4444' : '#ff6b35'};
+                    color: #ffffff;
+                    padding: 4px 8px;
+                    border-radius: 6px;
+                    font-weight: 800;
+                    font-size: 10px;
+                    box-shadow: 0 0 12px ${isBlocked ? '#ef4444' : '#ff6b35'};
+                    border: 1.5px solid #ffffff;
+                    white-space: nowrap;
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                  ">
+                    <span>${iconEmoji}</span>
+                    <span>${h.name.toUpperCase()} ${isBlocked ? '(ROAD BLOCKED)' : ''}</span>
+                  </div>
+                `,
+                iconSize: [210, 26],
+                iconAnchor: [105, 13]
+              })}
+            />
+          </React.Fragment>
         );
       })}
 

@@ -213,38 +213,69 @@ export default function MapView({ vehicles, hazardZones, route, isAlternate }: M
         />
       )}
 
-      {/* 6. HAZARD ZONES (HAFLONG LANDSLIDE & OTHER CALAMITIES IN RED/ORANGE) */}
+      {/* 6. HAZARD ZONES (RED CIRCLES WITH EXPLICIT LANDSLIDE BADGES) */}
       {hazardZones.map((h) => {
         if (h.lat === SILCHAR_DESTINATION.lat && h.lng === SILCHAR_DESTINATION.lng) return null;
 
         const isBlocked = h.status === 'BLOCKED' || (isAlternate && h.id === 'hz9');
+        const iconEmoji = h.type === 'landslide' ? '⛰️' : h.type === 'flood' ? '🌊' : '⚠️';
         return (
-          <Circle
-            key={h.id}
-            center={[h.lat, h.lng]}
-            radius={h.radius_km * 1000}
-            pathOptions={{
-              color: isBlocked ? '#ef4444' : h.risk >= 0.8 ? '#ef4444' : '#ff6b35',
-              fillColor: isBlocked ? '#ef4444' : h.risk >= 0.8 ? '#ef4444' : '#ff6b35',
-              fillOpacity: isBlocked ? 0.4 : 0.15,
-              weight: isBlocked ? 3 : 2,
-              dashArray: isBlocked ? 'none' : '5, 8',
-            }}
-          >
-            <Popup>
-              <div style={{ padding: '4px', minWidth: '160px' }}>
-                <h3 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 700, color: isBlocked ? '#ef4444' : '#fff' }}>
-                  ⚠️ {h.name} {isBlocked ? '🚫 (ROAD BLOCKED)' : ''}
-                </h3>
-                <p style={{ margin: '2px 0', fontSize: '12px' }}>Type: {h.type}</p>
-                <p style={{ margin: '2px 0', fontSize: '12px' }}>
-                  Status: <strong style={{ color: isBlocked ? '#ef4444' : '#22c55e' }}>
-                    {isBlocked ? 'BLOCKED LANDSLIDE AREA' : 'Active Warning'}
-                  </strong>
-                </p>
-              </div>
-            </Popup>
-          </Circle>
+          <React.Fragment key={h.id}>
+            <Circle
+              center={[h.lat, h.lng]}
+              radius={h.radius_km * 1000}
+              pathOptions={{
+                color: isBlocked ? '#ef4444' : h.risk >= 0.8 ? '#ef4444' : '#ff6b35',
+                fillColor: isBlocked ? '#ef4444' : h.risk >= 0.8 ? '#ef4444' : '#ff6b35',
+                fillOpacity: isBlocked ? 0.45 : 0.2,
+                weight: isBlocked ? 3 : 2,
+                dashArray: isBlocked ? 'none' : '5, 8',
+              }}
+            >
+              <Popup>
+                <div style={{ padding: '4px', minWidth: '160px' }}>
+                  <h3 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 700, color: isBlocked ? '#ef4444' : '#fff' }}>
+                    {iconEmoji} {h.name} {isBlocked ? '🚫 (ROAD BLOCKED)' : ''}
+                  </h3>
+                  <p style={{ margin: '2px 0', fontSize: '12px' }}>Type: {h.type.toUpperCase()}</p>
+                  <p style={{ margin: '2px 0', fontSize: '12px' }}>
+                    Status: <strong style={{ color: isBlocked ? '#ef4444' : '#22c55e' }}>
+                      {isBlocked ? 'BLOCKED LANDSLIDE AREA' : 'Active Warning'}
+                    </strong>
+                  </p>
+                </div>
+              </Popup>
+            </Circle>
+
+            {/* EXPLICIT LANDSLIDE BADGE MARKER ON RED CIRCLE */}
+            <Marker
+              position={[h.lat, h.lng]}
+              icon={L.divIcon({
+                className: 'hazard-label-marker',
+                html: `
+                  <div style="
+                    background: ${isBlocked ? '#ef4444' : '#ff6b35'};
+                    color: #ffffff;
+                    padding: 4px 8px;
+                    border-radius: 6px;
+                    font-weight: 800;
+                    font-size: 10px;
+                    box-shadow: 0 0 12px ${isBlocked ? '#ef4444' : '#ff6b35'};
+                    border: 1.5px solid #ffffff;
+                    white-space: nowrap;
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                  ">
+                    <span>${iconEmoji}</span>
+                    <span>${h.name.toUpperCase()} ${isBlocked ? '(ROAD BLOCKED)' : ''}</span>
+                  </div>
+                `,
+                iconSize: [210, 26],
+                iconAnchor: [105, 13]
+              })}
+            />
+          </React.Fragment>
         );
       })}
 
