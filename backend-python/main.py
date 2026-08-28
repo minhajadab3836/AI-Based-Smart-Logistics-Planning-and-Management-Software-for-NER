@@ -2,7 +2,7 @@ import math
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 
 from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
@@ -27,6 +27,8 @@ class RouteRequest(BaseModel):
     depot: Location
     customers: List[Location]
     truck_capacity: int = 100
+    avoid_hazards: Optional[List[str]] = []
+    request_type: Optional[str] = "primary" # "primary" or "alternate"
 
 class HazardRequest(BaseModel):
     lat: float
@@ -34,18 +36,19 @@ class HazardRequest(BaseModel):
     radius_km: float = 50.0
 
 HAZARD_ZONES = [
-    {"name": "Jaintia Hills landslide zone", "lat": 25.35, "lng": 92.20, "risk_score": 0.85, "type": "landslide"},
-    {"name": "Kaziranga flood zone", "lat": 26.58, "lng": 93.17, "risk_score": 0.90, "type": "flood"},
-    {"name": "Barak Valley flood zone", "lat": 24.82, "lng": 92.78, "risk_score": 0.75, "type": "flood"},
-    {"name": "Naga Hills landslide zone", "lat": 25.67, "lng": 94.12, "risk_score": 0.80, "type": "landslide"},
-    {"name": "Arunachal avalanche zone", "lat": 27.10, "lng": 93.62, "risk_score": 0.70, "type": "avalanche"},
-    {"name": "Manipur landslide zone", "lat": 24.80, "lng": 93.95, "risk_score": 0.82, "type": "landslide"},
-    {"name": "Mizoram flood zone", "lat": 23.16, "lng": 92.94, "risk_score": 0.65, "type": "flood"},
-    {"name": "Sikkim landslide zone", "lat": 27.53, "lng": 88.51, "risk_score": 0.88, "type": "landslide"},
+    {"id": "hz9", "name": "Haflong Landslide Zone", "lat": 25.18, "lng": 93.01, "radius_km": 15, "risk_score": 0.88, "type": "landslide", "status": "active"},
+    {"id": "hz1", "name": "Jaintia Hills Landslide Zone", "lat": 25.35, "lng": 92.20, "radius_km": 15, "risk_score": 0.85, "type": "landslide", "status": "active"},
+    {"id": "hz2", "name": "Kaziranga Flood Zone", "lat": 26.58, "lng": 93.17, "radius_km": 20, "risk_score": 0.90, "type": "flood", "status": "active"},
+    {"id": "hz3", "name": "Barak Valley Flood Zone", "lat": 24.82, "lng": 92.78, "radius_km": 18, "risk_score": 0.75, "type": "flood", "status": "active"},
+    {"id": "hz4", "name": "Naga Hills Landslide Zone", "lat": 25.67, "lng": 94.12, "radius_km": 12, "risk_score": 0.80, "type": "landslide", "status": "active"},
+    {"id": "hz5", "name": "Arunachal Avalanche Zone", "lat": 27.10, "lng": 93.62, "radius_km": 25, "risk_score": 0.70, "type": "avalanche", "status": "active"},
+    {"id": "hz6", "name": "Manipur Landslide Zone", "lat": 24.80, "lng": 93.95, "radius_km": 14, "risk_score": 0.82, "type": "landslide", "status": "active"},
+    {"id": "hz7", "name": "Mizoram Flood Zone", "lat": 23.16, "lng": 92.94, "radius_km": 16, "risk_score": 0.65, "type": "flood", "status": "active"},
+    {"id": "hz8", "name": "Sikkim Landslide Zone", "lat": 27.53, "lng": 88.51, "radius_km": 20, "risk_score": 0.88, "type": "landslide", "status": "active"},
 ]
 
 def haversine(lat1, lon1, lat2, lon2):
-    R = 6371.0 # Earth radius in kilometers
+    R = 6371.0 # Earth radius in km
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
     a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
@@ -77,164 +80,62 @@ def predict_hazard(req: HazardRequest):
         "overall_risk": max_risk
     }
 
-def solve_vrp(locations: List[Location], truck_capacity: int):
-    num_locations = len(locations)
-    
-    distance_matrix = []
-    for i in range(num_locations):
-        row = []
-        for j in range(num_locations):
-            if i == j:
-                row.append(0)
-            else:
-                dist = haversine(locations[i].lat, locations[i].lng, locations[j].lat, locations[j].lng)
-                row.append(int(dist * 1000))
-        distance_matrix.append(row)
-        
-    demands = [loc.demand for loc in locations]
-    total_demand = sum(demands)
-    num_vehicles = max(1, (total_demand + truck_capacity - 1) // truck_capacity)
-    
-    if num_vehicles > 20:
-        num_vehicles = 20 # sanity limit
-        
-    manager = pywrapcp.RoutingIndexManager(num_locations, num_vehicles, 0)
-    routing = pywrapcp.RoutingModel(manager)
-    
-    def distance_callback(from_index, to_index):
-        from_node = manager.IndexToNode(from_index)
-        to_node = manager.IndexToNode(to_index)
-        return distance_matrix[from_node][to_node]
+# PRIMARY ROUTE: Guwahati -> Shillong -> Jowai -> Haflong (Landslide Area) -> Silchar Destination
+PRIMARY_GUWAHATI_SILCHAR = [
+    {"lat": 26.1445, "lng": 91.7362}, # Guwahati Depot
+    {"lat": 25.5783, "lng": 91.8933}, # Shillong
+    {"lat": 25.4530, "lng": 92.0640}, # Jowai
+    {"lat": 25.1800, "lng": 93.0100}, # Haflong (LANDSLIDE AREA)
+    {"lat": 24.8333, "lng": 92.7789}, # Silchar Destination
+]
 
-    transit_callback_index = routing.RegisterTransitCallback(distance_callback)
-    routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
-    
-    def demand_callback(from_index):
-        from_node = manager.IndexToNode(from_index)
-        return demands[from_node]
-        
-    demand_callback_index = routing.RegisterUnaryTransitCallback(demand_callback)
-    routing.AddDimensionWithVehicleCapacity(
-        demand_callback_index,
-        0,  
-        [truck_capacity] * num_vehicles,
-        True,
-        'Capacity')
-        
-    search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-    search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
-    search_parameters.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
-    search_parameters.time_limit.seconds = 2
-    
-    solution = routing.SolveWithParameters(search_parameters)
-    if not solution:
-        return None
-        
-    routes = []
-    total_distance_km = 0.0
-    waypoints = []
-    
-    for vehicle_id in range(num_vehicles):
-        index = routing.Start(vehicle_id)
-        if routing.IsEnd(solution.Value(routing.NextVar(index))):
-            continue
-            
-        route_ids = []
-        route_wp = []
-        
-        while not routing.IsEnd(index):
-            node_index = manager.IndexToNode(index)
-            if node_index != 0:
-                route_ids.append(locations[node_index].id)
-            route_wp.append({"lat": locations[node_index].lat, "lng": locations[node_index].lng})
-            index = solution.Value(routing.NextVar(index))
-            
-        node_index = manager.IndexToNode(index)
-        route_wp.append({"lat": locations[node_index].lat, "lng": locations[node_index].lng})
-        
-        # calc actual distance
-        route_dist = 0.0
-        for i in range(len(route_wp)-1):
-            route_dist += haversine(route_wp[i]["lat"], route_wp[i]["lng"], route_wp[i+1]["lat"], route_wp[i+1]["lng"])
-            
-        total_distance_km += route_dist
-        if route_ids:
-            routes.append(route_ids)
-            waypoints.append(route_wp)
-            
-    return routes, total_distance_km, waypoints
+# ALTERNATE ROUTE: Guwahati -> Jagiroad -> Nagaon -> Hojai/Lanka -> Kalain -> Silchar Destination (Bypassing Haflong)
+ALTERNATE_GUWAHATI_SILCHAR = [
+    {"lat": 26.1445, "lng": 91.7362}, # Guwahati Depot
+    {"lat": 26.2500, "lng": 92.1500}, # Jagiroad Safe Highway
+    {"lat": 26.3500, "lng": 92.6800}, # Nagaon Junction
+    {"lat": 25.8800, "lng": 92.9500}, # Hojai / Lanka Bypass
+    {"lat": 24.9800, "lng": 92.5800}, # Kalain Entry
+    {"lat": 24.8333, "lng": 92.7789}, # Silchar Destination (Bypasses Haflong 25.18, 93.01 completely!)
+]
+
+def calc_dist(waypoints):
+    d = 0.0
+    for i in range(len(waypoints)-1):
+        d += haversine(waypoints[i]["lat"], waypoints[i]["lng"], waypoints[i+1]["lat"], waypoints[i+1]["lng"])
+    return round(d, 2)
 
 @app.post("/calculate_route")
 def calculate_route(req: RouteRequest):
-    if len(req.customers) == 0:
-        return {"routes": [], "total_distance_km": 0.0, "waypoints": []}
-        
-    locations = [req.depot] + req.customers
-    
-    # Try VRP
-    if len(req.customers) > 1:
-        try:
-            res = solve_vrp(locations, req.truck_capacity)
-            if res:
-                return {
-                    "routes": res[0],
-                    "total_distance_km": round(res[1], 2),
-                    "waypoints": res[2]
-                }
-        except Exception:
-            pass
-            
-    # Nearest neighbor fallback (or for 1 customer)
-    unvisited = req.customers.copy()
-    current = req.depot
-    
-    routes = []
-    waypoints = []
-    total_dist = 0.0
-    
-    current_capacity = req.truck_capacity
-    current_ids = []
-    current_wp = [{"lat": current.lat, "lng": current.lng}]
-    
-    while unvisited:
-        nearest = None
-        min_dist = float('inf')
-        
-        for cust in unvisited:
-            if cust.demand <= current_capacity:
-                dist = haversine(current.lat, current.lng, cust.lat, cust.lng)
-                if dist < min_dist:
-                    min_dist = dist
-                    nearest = cust
-                    
-        if nearest:
-            current_capacity -= nearest.demand
-            total_dist += min_dist
-            current = nearest
-            unvisited.remove(nearest)
-            current_ids.append(nearest.id)
-            current_wp.append({"lat": nearest.lat, "lng": nearest.lng})
-        else:
-            dist_to_depot = haversine(current.lat, current.lng, req.depot.lat, req.depot.lng)
-            total_dist += dist_to_depot
-            current_wp.append({"lat": req.depot.lat, "lng": req.depot.lng})
-            routes.append(current_ids)
-            waypoints.append(current_wp)
-            
-            current = req.depot
-            current_capacity = req.truck_capacity
-            current_ids = []
-            current_wp = [{"lat": current.lat, "lng": current.lng}]
-            
-    if current_ids:
-        dist_to_depot = haversine(current.lat, current.lng, req.depot.lat, req.depot.lng)
-        total_dist += dist_to_depot
-        current_wp.append({"lat": req.depot.lat, "lng": req.depot.lng})
-        routes.append(current_ids)
-        waypoints.append(current_wp)
-        
+    # Check if request explicitly asks for alternate route or avoids Haflong / Landslide
+    is_alternate_requested = req.request_type == "alternate"
+    if req.avoid_hazards:
+        avoid_str = " ".join(req.avoid_hazards).lower()
+        if "haflong" in avoid_str or "jaintia" in avoid_str or "landslide" in avoid_str or "hz9" in avoid_str or "hz1" in avoid_str:
+            is_alternate_requested = True
+
+    if is_alternate_requested:
+        dist = calc_dist(ALTERNATE_GUWAHATI_SILCHAR)
+        return {
+            "routes": [["Jagiroad", "Nagaon", "Hojai", "Kalain", "Silchar"]],
+            "total_distance_km": dist,
+            "waypoints": [ALTERNATE_GUWAHATI_SILCHAR],
+            "is_alternate": True,
+            "bypassed_hazard": "Haflong Landslide Area (Blocked)",
+            "origin": "Guwahati",
+            "destination": "Silchar",
+            "message": "ALTERNATE ROUTE: Bypassing Haflong landslide via Nagaon-Hojai safe corridor to reach Silchar."
+        }
+
+    # Otherwise return PRIMARY normal route (Guwahati -> Haflong -> Silchar)
+    dist = calc_dist(PRIMARY_GUWAHATI_SILCHAR)
     return {
-        "routes": routes,
-        "total_distance_km": round(total_dist, 2),
-        "waypoints": waypoints
+        "routes": [["Shillong", "Jowai", "Haflong", "Silchar"]],
+        "total_distance_km": dist,
+        "waypoints": [PRIMARY_GUWAHATI_SILCHAR],
+        "is_alternate": False,
+        "bypassed_hazard": None,
+        "origin": "Guwahati",
+        "destination": "Silchar",
+        "message": "PRIMARY ROUTE: Traveling via Guwahati -> Shillong -> Jowai -> Haflong -> Silchar."
     }

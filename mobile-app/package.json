@@ -1,0 +1,24 @@
+{
+  "name": "ner-truck-driver-mobile-app",
+  "version": "1.0.0",
+  "description": "Mobile app for NER truck drivers with 4G telemetry, zero-network SMS failsafe, and hazard geofencing",
+  "main": "index.tsx",
+  "scripts": {
+    "dev": "vite --port 3002",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "leaflet": "^1.9.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-leaflet": "^4.2.1"
+  },
+  "devDependencies": {
+    "@types/leaflet": "^1.9.12",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "typescript": "^5.5.3",
+    "vite": "^5.3.4"
+  }
+}

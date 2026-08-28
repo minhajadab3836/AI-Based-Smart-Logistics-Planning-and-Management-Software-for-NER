@@ -14,18 +14,22 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // In-Memory Data Stores
-const vehiclePositions = new Map(); // vehicleId -> {lat, lng, speed, heading, timestamp}
-const gpsLogs = [];                 // array of all GPS log entries
-const sseClients = new Set();       // active SSE connections
-const hazardZones = [               // NER hazard zones
-  { id: 'hz1', name: 'Jaintia Hills Landslide Zone', lat: 25.35, lng: 92.20, radius_km: 15, risk: 0.85, type: 'landslide' },
-  { id: 'hz2', name: 'Kaziranga Flood Zone', lat: 26.58, lng: 93.17, radius_km: 20, risk: 0.90, type: 'flood' },
-  { id: 'hz3', name: 'Barak Valley Flood Zone', lat: 24.82, lng: 92.78, radius_km: 18, risk: 0.75, type: 'flood' },
-  { id: 'hz4', name: 'Naga Hills Landslide Zone', lat: 25.67, lng: 94.12, radius_km: 12, risk: 0.80, type: 'landslide' },
-  { id: 'hz5', name: 'Arunachal Avalanche Zone', lat: 27.10, lng: 93.62, radius_km: 25, risk: 0.70, type: 'avalanche' },
-  { id: 'hz6', name: 'Manipur Landslide Zone', lat: 24.80, lng: 93.95, radius_km: 14, risk: 0.82, type: 'landslide' },
-  { id: 'hz7', name: 'Mizoram Flood Zone', lat: 23.16, lng: 92.94, radius_km: 16, risk: 0.65, type: 'flood' },
-  { id: 'hz8', name: 'Sikkim Landslide Zone', lat: 27.53, lng: 88.51, radius_km: 20, risk: 0.88, type: 'landslide' }
+const vehiclePositions = new Map();
+const gpsLogs = [];
+const reportedIncidents = [];
+const sseClients = new Set();
+let activeAvoidHazards = [];
+
+const hazardZones = [
+  { id: 'hz9', name: 'Haflong Landslide Zone', lat: 25.18, lng: 93.01, radius_km: 15, risk: 0.88, type: 'landslide', status: 'active' },
+  { id: 'hz1', name: 'Jaintia Hills Landslide Zone', lat: 25.35, lng: 92.20, radius_km: 15, risk: 0.85, type: 'landslide', status: 'active' },
+  { id: 'hz2', name: 'Kaziranga Flood Zone', lat: 26.58, lng: 93.17, radius_km: 20, risk: 0.90, type: 'flood', status: 'active' },
+  { id: 'hz3', name: 'Barak Valley Flood Zone', lat: 24.82, lng: 92.78, radius_km: 18, risk: 0.75, type: 'flood', status: 'active' },
+  { id: 'hz4', name: 'Naga Hills Landslide Zone', lat: 25.67, lng: 94.12, radius_km: 12, risk: 0.80, type: 'landslide', status: 'active' },
+  { id: 'hz5', name: 'Arunachal Avalanche Zone', lat: 27.10, lng: 93.62, radius_km: 25, risk: 0.70, type: 'avalanche', status: 'active' },
+  { id: 'hz6', name: 'Manipur Landslide Zone', lat: 24.80, lng: 93.95, radius_km: 14, risk: 0.82, type: 'landslide', status: 'active' },
+  { id: 'hz7', name: 'Mizoram Flood Zone', lat: 23.16, lng: 92.94, radius_km: 16, risk: 0.65, type: 'flood', status: 'active' },
+  { id: 'hz8', name: 'Sikkim Landslide Zone', lat: 27.53, lng: 88.51, radius_km: 20, risk: 0.88, type: 'landslide', status: 'active' }
 ];
 
 const vehicles = [
@@ -34,7 +38,6 @@ const vehicles = [
   { id: 'TRUCK-NER-03', name: 'Construction Materials', cargo: 'Building Materials', capacity: 200, status: 'active' }
 ];
 
-// Helper to broadcast to SSE clients
 function broadcastSSE(event, data) {
   const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
   for (const client of sseClients) {
@@ -49,8 +52,7 @@ mqttServer.listen(MQTT_PORT, () => {
 });
 
 aedes.on('publish', function (packet, client) {
-  if (!client) return; // internal messages
-
+  if (!client) return;
   const topic = packet.topic;
   if (topic.startsWith('gps/')) {
     const vehicleId = topic.split('/')[1];
@@ -58,33 +60,31 @@ aedes.on('publish', function (packet, client) {
       try {
         const payload = JSON.parse(packet.payload.toString());
         const { lat, lng, speed, heading, timestamp } = payload;
-        
         const posData = { lat, lng, speed, heading, timestamp: timestamp || Date.now() };
         vehiclePositions.set(vehicleId, posData);
-        
-        const logEntry = { vehicleId, ...posData };
-        gpsLogs.push(logEntry);
-        
-        broadcastSSE('gps_update', logEntry);
-        
-        console.log(`[MQTT] Vehicle ${vehicleId} at (${lat}, ${lng})`);
+        gpsLogs.push({ vehicleId, ...posData });
+        broadcastSSE('gps_update', { vehicleId, ...posData });
       } catch (err) {
-        console.error(`[MQTT] Failed to parse payload for ${vehicleId}:`, err);
+        console.error(`[MQTT] Error parsing payload:`, err);
       }
     }
   }
 });
 
-// Express Endpoints
+// Calculate Route Proxy Endpoint
 app.post('/api/route', (req, res) => {
+  const payload = {
+    ...req.body,
+    avoid_hazards: req.body.avoid_hazards || activeAvoidHazards,
+    request_type: req.body.request_type || (activeAvoidHazards.length > 0 ? "alternate" : "primary")
+  };
+
   const options = {
     hostname: 'localhost',
     port: 8000,
     path: '/calculate_route',
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    }
+    headers: { 'Content-Type': 'application/json' }
   };
 
   const proxyReq = http.request(options, (proxyRes) => {
@@ -100,21 +100,57 @@ app.post('/api/route', (req, res) => {
   });
 
   proxyReq.on('error', (e) => {
-    console.error(`Problem with request: ${e.message}`);
     res.status(500).json({ error: e.message });
   });
 
-  proxyReq.write(JSON.stringify(req.body));
+  proxyReq.write(JSON.stringify(payload));
   proxyReq.end();
+});
+
+// Explicit Incident Reporting Endpoint
+app.post('/api/report-incident', (req, res) => {
+  const { vehicleId, hazardName, type, lat, lng, details } = req.body;
+  const incident = {
+    id: 'inc-' + Date.now(),
+    vehicleId: vehicleId || 'TRUCK-NER-01',
+    hazardName: hazardName || 'Haflong Landslide Zone',
+    type: type || 'landslide',
+    lat: lat || 25.18,
+    lng: lng || 93.01,
+    details: details || 'Severe Landslide at Haflong blocking Guwahati -> Silchar corridor!',
+    timestamp: new Date().toISOString()
+  };
+
+  reportedIncidents.unshift(incident);
+
+  // Mark Haflong as BLOCKED (100% Risk)
+  const zone = hazardZones.find(h => h.id === 'hz9' || h.name.toLowerCase().includes('haflong'));
+  if (zone) {
+    zone.risk = 1.0;
+    zone.status = 'BLOCKED';
+  }
+
+  if (!activeAvoidHazards.includes('Haflong')) {
+    activeAvoidHazards.push('Haflong');
+  }
+
+  broadcastSSE('incident_reported', incident);
+  broadcastSSE('hazard_update', hazardZones);
+
+  console.log(`[INCIDENT REPORTED] ${incident.hazardName} by ${incident.vehicleId}`);
+
+  return res.json({
+    status: 'success',
+    message: `Landslide incident logged at Haflong. Road segment marked BLOCKED.`,
+    incident,
+    avoid_hazards: activeAvoidHazards
+  });
 });
 
 app.post('/api/sms-webhook', (req, res) => {
   const { From, Body } = req.body;
-  if (!Body) {
-    return res.status(400).json({ error: 'Missing Body' });
-  }
+  if (!Body) return res.status(400).json({ error: 'Missing Body' });
 
-  // Body format: vehicleId|lat|lng|timestamp|status
   const parts = Body.split('|');
   if (parts.length >= 4) {
     const vehicleId = parts[0];
@@ -125,14 +161,39 @@ app.post('/api/sms-webhook', (req, res) => {
 
     const posData = { lat, lng, timestamp, status, source: 'sms' };
     vehiclePositions.set(vehicleId, posData);
-    
-    const logEntry = { vehicleId, ...posData };
-    gpsLogs.push(logEntry);
-    
-    broadcastSSE('sms_update', logEntry);
-    
-    console.log(`[SMS] Webhook received for ${vehicleId} at (${lat}, ${lng})`);
-    return res.json({ status: 'received', parsed: logEntry });
+    gpsLogs.push({ vehicleId, ...posData });
+
+    if (status.includes('hazard') || status.includes('landslide')) {
+      const incident = {
+        id: 'inc-' + Date.now(),
+        vehicleId,
+        hazardName: 'Haflong Landslide Zone',
+        type: 'landslide',
+        lat: 25.18,
+        lng: 93.01,
+        details: `SMS Failsafe Incident Report: Landslide at Haflong (${status})`,
+        timestamp
+      };
+
+      reportedIncidents.unshift(incident);
+
+      const zone = hazardZones.find(h => h.id === 'hz9' || h.name.toLowerCase().includes('haflong'));
+      if (zone) {
+        zone.risk = 1.0;
+        zone.status = 'BLOCKED';
+      }
+
+      if (!activeAvoidHazards.includes('Haflong')) {
+        activeAvoidHazards.push('Haflong');
+      }
+
+      broadcastSSE('incident_reported', incident);
+      broadcastSSE('hazard_update', hazardZones);
+    } else {
+      broadcastSSE('sms_update', { vehicleId, ...posData });
+    }
+
+    return res.json({ status: 'received', parsed: { vehicleId, ...posData } });
   } else {
     return res.status(400).json({ error: 'Invalid Body format' });
   }
@@ -150,21 +211,16 @@ app.get('/api/hazard-zones', (req, res) => {
   res.json(hazardZones);
 });
 
-app.get('/api/gps-logs', (req, res) => {
-  // last 100 entries, newest first
-  const latestLogs = gpsLogs.slice(-100).reverse();
-  res.json(latestLogs);
+app.get('/api/incidents', (req, res) => {
+  res.json(reportedIncidents);
 });
 
 app.get('/api/stats', (req, res) => {
   const now = Date.now();
   let activeVehicles = 0;
   for (const pos of vehiclePositions.values()) {
-    // Check if position was updated in the last 60 seconds
     const posTime = typeof pos.timestamp === 'string' ? new Date(pos.timestamp).getTime() : pos.timestamp;
-    if (now - posTime < 60000) {
-      activeVehicles++;
-    }
+    if (now - posTime < 60000) activeVehicles++;
   }
 
   res.json({
@@ -172,6 +228,8 @@ app.get('/api/stats', (req, res) => {
     activeVehicles,
     hazardZones: hazardZones.length,
     totalGpsLogs: gpsLogs.length,
+    reportedIncidents: reportedIncidents.length,
+    blockedRoads: activeAvoidHazards.length,
     uptime: process.uptime()
   });
 });
@@ -184,12 +242,15 @@ app.get('/api/stream', (req, res) => {
     'Access-Control-Allow-Origin': '*'
   });
 
-  // Send initial data
   const mergedVehicles = vehicles.map(v => {
     const position = vehiclePositions.get(v.id) || null;
     return { ...v, position };
   });
   res.write(`event: init\ndata: ${JSON.stringify(mergedVehicles)}\n\n`);
+
+  if (reportedIncidents.length > 0) {
+    res.write(`event: incident_reported\ndata: ${JSON.stringify(reportedIncidents[0])}\n\n`);
+  }
 
   sseClients.add(res);
 
@@ -198,7 +259,6 @@ app.get('/api/stream', (req, res) => {
   });
 });
 
-// Keepalive ping for SSE
 setInterval(() => {
   for (const client of sseClients) {
     client.write(`event: ping\ndata: {"time":${Date.now()}}\n\n`);
