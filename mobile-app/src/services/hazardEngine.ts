@@ -3,7 +3,6 @@ import { GPSPosition, HazardZone, HazardAlert } from '../types';
 export const NER_HAZARD_ZONES: HazardZone[] = [
   { id: 'hz1', name: 'Jaintia Hills Landslide Zone', lat: 25.35, lng: 92.20, radius_km: 15, risk: 0.85, type: 'landslide' },
   { id: 'hz2', name: 'Kaziranga Flood Zone', lat: 26.58, lng: 93.17, radius_km: 20, risk: 0.90, type: 'flood' },
-  { id: 'hz3', name: 'Barak Valley Flood Zone', lat: 24.82, lng: 92.78, radius_km: 18, risk: 0.75, type: 'flood' },
   { id: 'hz4', name: 'Naga Hills Landslide Zone', lat: 25.67, lng: 94.12, radius_km: 12, risk: 0.80, type: 'landslide' },
   { id: 'hz5', name: 'Arunachal Avalanche Zone', lat: 27.10, lng: 93.62, radius_km: 25, risk: 0.70, type: 'avalanche' },
   { id: 'hz6', name: 'Manipur Landslide Zone', lat: 24.80, lng: 93.95, radius_km: 14, risk: 0.82, type: 'landslide' },
