@@ -495,9 +495,17 @@ body {
   color: var(--accent) !important;
 }
 
-.vehicle-marker {
+.vehicle-marker,
+.green-city-marker,
+.junction-marker,
+.route-name-label,
+.old-route-label,
+.new-route-label,
+.location-marker,
+.driver-truck-icon {
   background: transparent !important;
   border: none !important;
+  box-shadow: none !important;
 }
 
 /* ---- Responsive ---- */

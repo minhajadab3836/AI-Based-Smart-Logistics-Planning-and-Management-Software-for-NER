@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Tooltip, Circle, Polyline } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -60,7 +60,7 @@ export default function MapView({ vehicles, hazardZones, route, isAlternate }: M
         <div style="
           background: #22c55e;
           color: #000;
-          padding: 5px 10px;
+          padding: 6px 12px;
           border-radius: 8px;
           font-weight: 800;
           font-size: 11px;
@@ -75,8 +75,8 @@ export default function MapView({ vehicles, hazardZones, route, isAlternate }: M
           <span>${label}</span>
         </div>
       `,
-      iconSize: [150, 32],
-      iconAnchor: [75, 16]
+      iconSize: [160, 34],
+      iconAnchor: [80, 17]
     });
   };
 
@@ -85,7 +85,7 @@ export default function MapView({ vehicles, hazardZones, route, isAlternate }: M
     return L.divIcon({
       className: 'vehicle-marker',
       html: `<div style="
-        font-size: 24px;
+        font-size: 26px;
         filter: drop-shadow(0 0 6px ${color});
         text-align: center;
         line-height: 1;
@@ -150,9 +150,6 @@ export default function MapView({ vehicles, hazardZones, route, isAlternate }: M
             <p style={{ margin: '4px 0 0', fontSize: 12 }}>Coordinates: 26.3452° N, 89.4482° E</p>
           </div>
         </Popup>
-        <Tooltip permanent direction="top" offset={[0, -12]} opacity={0.95}>
-          <strong style={{ color: '#22c55e' }}>🟢 START: Cooch Behar Depot</strong>
-        </Tooltip>
       </Marker>
 
       {/* 2. WARNING TRIGGER JUNCTION: GUWAHATI */}
@@ -164,19 +161,19 @@ export default function MapView({ vehicles, hazardZones, route, isAlternate }: M
             <div style="
               background: #0284c7;
               color: #fff;
-              padding: 3px 8px;
+              padding: 4px 10px;
               border-radius: 6px;
               font-weight: 800;
-              font-size: 10px;
-              box-shadow: 0 0 10px #0284c7;
-              border: 1px solid #fff;
+              font-size: 11px;
+              box-shadow: 0 0 12px #0284c7;
+              border: 1px solid #ffffff;
               white-space: nowrap;
             ">
               📍 Warning Point: Guwahati
             </div>
           `,
-          iconSize: [140, 26],
-          iconAnchor: [70, 13]
+          iconSize: [150, 28],
+          iconAnchor: [75, 14]
         })}
       />
 
@@ -191,12 +188,9 @@ export default function MapView({ vehicles, hazardZones, route, isAlternate }: M
             <p style={{ margin: '4px 0 0', fontSize: 12 }}>Coordinates: 24.8333° N, 92.7789° E</p>
           </div>
         </Popup>
-        <Tooltip permanent direction="top" offset={[0, -12]} opacity={0.95}>
-          <strong style={{ color: '#22c55e' }}>🟢 DESTINATION: Silchar Hub</strong>
-        </Tooltip>
       </Marker>
 
-      {/* 4. PRIMARY ROUTE (Cooch Behar -> Guwahati -> Haflong -> Silchar) */}
+      {/* 4. PRIMARY ROUTE */}
       <Polyline
         positions={PRIMARY_POLYLINE}
         pathOptions={{
@@ -207,45 +201,20 @@ export default function MapView({ vehicles, hazardZones, route, isAlternate }: M
         }}
       />
 
-      {/* 5. NEW ALTERNATE ROUTE (Guwahati -> Nagaon -> Hojai -> Silchar) */}
+      {/* 5. NEW ALTERNATE ROUTE */}
       {isAlternate && (
-        <React.Fragment>
-          <Polyline
-            positions={ALTERNATE_POLYLINE}
-            pathOptions={{
-              color: '#00d4ff',
-              weight: 6,
-              opacity: 0.95
-            }}
-          />
-          <Marker
-            position={ALTERNATE_POLYLINE[Math.floor(ALTERNATE_POLYLINE.length / 2)]}
-            icon={L.divIcon({
-              className: 'new-route-label',
-              html: `
-                <div style="
-                  background: #00d4ff;
-                  color: #000;
-                  padding: 4px 10px;
-                  border-radius: 6px;
-                  font-size: 10px;
-                  font-weight: 900;
-                  box-shadow: 0 0 16px #00d4ff;
-                  white-space: nowrap;
-                ">
-                  🔀 New Alternate Bypass Route (via Nagaon-Hojai) ➔ Silchar
-                </div>
-              `,
-              iconSize: [280, 24],
-              iconAnchor: [140, 12]
-            })}
-          />
-        </React.Fragment>
+        <Polyline
+          positions={ALTERNATE_POLYLINE}
+          pathOptions={{
+            color: '#00d4ff',
+            weight: 6,
+            opacity: 0.95
+          }}
+        />
       )}
 
       {/* 6. HAZARD ZONES (HAFLONG LANDSLIDE & OTHER CALAMITIES IN RED/ORANGE) */}
       {hazardZones.map((h) => {
-        // Exclude any hazard indicator on Silchar coordinates
         if (h.lat === SILCHAR_DESTINATION.lat && h.lng === SILCHAR_DESTINATION.lng) return null;
 
         const isBlocked = h.status === 'BLOCKED' || (isAlternate && h.id === 'hz9');
@@ -275,11 +244,6 @@ export default function MapView({ vehicles, hazardZones, route, isAlternate }: M
                 </p>
               </div>
             </Popup>
-            <Tooltip direction="center" permanent opacity={0.85}>
-              <span style={{ fontSize: '11px', fontWeight: 700, color: isBlocked ? '#ef4444' : '#fff' }}>
-                {isBlocked ? '🚫 HAFLONG LANDSLIDE' : h.type === 'landslide' ? '⛰️' : '🌊'}
-              </span>
-            </Tooltip>
           </Circle>
         );
       })}
@@ -310,9 +274,6 @@ export default function MapView({ vehicles, hazardZones, route, isAlternate }: M
                 </p>
               </div>
             </Popup>
-            <Tooltip direction="top" offset={[0, -20]} opacity={0.9}>
-              <span style={{ fontSize: '11px', fontWeight: 500 }}>{v.id}</span>
-            </Tooltip>
           </Marker>
         );
       })}

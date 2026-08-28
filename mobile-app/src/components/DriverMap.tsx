@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, Tooltip } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { GPSPosition, HazardZone } from '../types';
@@ -39,7 +39,7 @@ export const DriverMap: React.FC<DriverMapProps> = ({
         <div style="
           background: #22c55e;
           color: #000;
-          padding: 5px 10px;
+          padding: 6px 12px;
           border-radius: 8px;
           font-weight: 800;
           font-size: 11px;
@@ -54,8 +54,8 @@ export const DriverMap: React.FC<DriverMapProps> = ({
           <span>${label}</span>
         </div>
       `,
-      iconSize: [150, 32],
-      iconAnchor: [75, 16]
+      iconSize: [160, 34],
+      iconAnchor: [80, 17]
     });
   };
 
@@ -101,102 +101,44 @@ export const DriverMap: React.FC<DriverMapProps> = ({
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
 
-      {/* 1. STARTING CITY MARKER: COOCH BEHAR (GREEN) */}
+      {/* 1. STARTING CITY MARKER: COOCH BEHAR (GREEN BADGE) */}
       <Marker
         position={[COOCHBEHAR_START.lat, COOCHBEHAR_START.lng]}
         icon={createGreenCityIcon('START: Cooch Behar', '🟢 🏁')}
-      >
-        <Tooltip permanent direction="top" offset={[0, -12]} opacity={0.95}>
-          <strong style={{ color: '#22c55e' }}>🟢 START: Cooch Behar Depot</strong>
-        </Tooltip>
-      </Marker>
+      />
 
-      {/* 2. DESTINATION CITY MARKER: SILCHAR (GREEN - NO LANDSLIDE!) */}
+      {/* 2. DESTINATION CITY MARKER: SILCHAR (GREEN BADGE) */}
       <Marker
         position={[SILCHAR_DESTINATION.lat, SILCHAR_DESTINATION.lng]}
         icon={createGreenCityIcon('DESTINATION: Silchar', '🟢 🎯')}
-      >
-        <Tooltip permanent direction="top" offset={[0, -12]} opacity={0.95}>
-          <strong style={{ color: '#22c55e' }}>🟢 DESTINATION: Silchar Hub</strong>
-        </Tooltip>
-      </Marker>
+      />
 
-      {/* 3. OLD PRIMARY ROUTE (Dashed Red/Orange Line if alternate active, or Orange if active) */}
+      {/* 3. OLD PRIMARY ROUTE */}
       {(showBothRoutes || !isAlternateActive) && primaryPolyline.length > 1 && (
-        <React.Fragment>
-          <Polyline
-            positions={primaryPolyline}
-            pathOptions={{
-              color: isAlternateActive ? '#ef4444' : '#ff6b35',
-              weight: isAlternateActive ? 3 : 5,
-              opacity: isAlternateActive ? 0.6 : 0.9,
-              dashArray: '10, 8'
-            }}
-          />
-          {isAlternateActive && (
-            <Marker
-              position={primaryPolyline[Math.floor(primaryPolyline.length / 2)]}
-              icon={L.divIcon({
-                className: 'old-route-label',
-                html: `
-                  <div style="
-                    background: #ef4444;
-                    color: #fff;
-                    padding: 3px 8px;
-                    border-radius: 4px;
-                    font-size: 10px;
-                    font-weight: 800;
-                    box-shadow: 0 0 10px #ef4444;
-                    white-space: nowrap;
-                  ">
-                    ❌ Old Primary Route (Blocked at Haflong Landslide)
-                  </div>
-                `,
-                iconSize: [260, 24],
-                iconAnchor: [130, 12]
-              })}
-            />
-          )}
-        </React.Fragment>
+        <Polyline
+          positions={primaryPolyline}
+          pathOptions={{
+            color: isAlternateActive ? '#ef4444' : '#ff6b35',
+            weight: isAlternateActive ? 3 : 5,
+            opacity: isAlternateActive ? 0.6 : 0.9,
+            dashArray: '10, 8'
+          }}
+        />
       )}
 
-      {/* 4. NEW ALTERNATE BYPASS ROUTE (Solid Cyan Line when active or showing both) */}
+      {/* 4. NEW ALTERNATE BYPASS ROUTE */}
       {(isAlternateActive || showBothRoutes) && alternatePolyline && alternatePolyline.length > 1 && (
-        <React.Fragment>
-          <Polyline
-            positions={alternatePolyline}
-            pathOptions={{
-              color: '#00d4ff',
-              weight: 6,
-              opacity: 0.95
-            }}
-          />
-          <Marker
-            position={alternatePolyline[Math.floor(alternatePolyline.length / 2)]}
-            icon={L.divIcon({
-              className: 'new-route-label',
-              html: `
-                <div style="
-                  background: #00d4ff;
-                  color: #000;
-                  padding: 4px 10px;
-                  border-radius: 6px;
-                  font-size: 10px;
-                  font-weight: 900;
-                  box-shadow: 0 0 16px #00d4ff;
-                  white-space: nowrap;
-                ">
-                  🔀 New Alternate Bypass Route (via Nagaon-Hojai) ➔ Silchar
-                </div>
-              `,
-              iconSize: [280, 24],
-              iconAnchor: [140, 12]
-            })}
-          />
-        </React.Fragment>
+        <Polyline
+          positions={alternatePolyline}
+          pathOptions={{
+            color: '#00d4ff',
+            weight: 6,
+            opacity: 0.95
+          }}
+        />
       )}
 
-      {/* 5. HAZARD ZONES (HAFLONG LANDSLIDE & OTHER CALAMITIES IN RED/ORANGE) */}
+      {/* 5. HAZARD ZONES */}
       {hazardZones.map(h => {
         if (h.lat === SILCHAR_DESTINATION.lat && h.lng === SILCHAR_DESTINATION.lng) return null;
 
@@ -212,13 +154,7 @@ export const DriverMap: React.FC<DriverMapProps> = ({
               fillOpacity: isBlocked ? 0.4 : 0.2,
               weight: isBlocked ? 3 : 2
             }}
-          >
-            <Tooltip permanent direction="top" opacity={0.85}>
-              <span style={{ fontSize: 10, fontWeight: 700, color: isBlocked ? '#ef4444' : '#fff' }}>
-                {isBlocked ? '🚫 HAFLONG LANDSLIDE' : `⚠️ ${h.name}`}
-              </span>
-            </Tooltip>
-          </Circle>
+          />
         );
       })}
 
