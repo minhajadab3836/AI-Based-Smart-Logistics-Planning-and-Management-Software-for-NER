@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+**/node_modules/
+backend-node/node_modules/
+web-dashboard/node_modules/
+
+# Python
+venv/
+**/venv/
+backend-python/venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+
+# Next.js build
+web-dashboard/.next/
+web-dashboard/out/
+
+# Environment / OS
+.DS_Store
+**/.DS_Store
+*.log
+.env
+.env.local

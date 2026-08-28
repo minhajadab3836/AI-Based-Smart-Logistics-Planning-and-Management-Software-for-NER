@@ -1,86 +1,219 @@
 const express = require('express');
-const { Aedes } = require('aedes');
-const aedes = new Aedes();
-const server = require('net').createServer(aedes.handle);
-const redis = require('redis');
-const { Client } = require('pg');
+const cors = require('cors');
+const aedes = require('aedes')();
+const net = require('net');
+const http = require('http');
+
+const PORT = 3000;
+const MQTT_PORT = 1883;
 
 const app = express();
+
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Redis Setup
-const redisClient = redis.createClient({ url: 'redis://localhost:6379' });
-redisClient.connect().then(() => console.log('Redis connected')).catch(console.error);
+// In-Memory Data Stores
+const vehiclePositions = new Map(); // vehicleId -> {lat, lng, speed, heading, timestamp}
+const gpsLogs = [];                 // array of all GPS log entries
+const sseClients = new Set();       // active SSE connections
+const hazardZones = [               // NER hazard zones
+  { id: 'hz1', name: 'Jaintia Hills Landslide Zone', lat: 25.35, lng: 92.20, radius_km: 15, risk: 0.85, type: 'landslide' },
+  { id: 'hz2', name: 'Kaziranga Flood Zone', lat: 26.58, lng: 93.17, radius_km: 20, risk: 0.90, type: 'flood' },
+  { id: 'hz3', name: 'Barak Valley Flood Zone', lat: 24.82, lng: 92.78, radius_km: 18, risk: 0.75, type: 'flood' },
+  { id: 'hz4', name: 'Naga Hills Landslide Zone', lat: 25.67, lng: 94.12, radius_km: 12, risk: 0.80, type: 'landslide' },
+  { id: 'hz5', name: 'Arunachal Avalanche Zone', lat: 27.10, lng: 93.62, radius_km: 25, risk: 0.70, type: 'avalanche' },
+  { id: 'hz6', name: 'Manipur Landslide Zone', lat: 24.80, lng: 93.95, radius_km: 14, risk: 0.82, type: 'landslide' },
+  { id: 'hz7', name: 'Mizoram Flood Zone', lat: 23.16, lng: 92.94, radius_km: 16, risk: 0.65, type: 'flood' },
+  { id: 'hz8', name: 'Sikkim Landslide Zone', lat: 27.53, lng: 88.51, radius_km: 20, risk: 0.88, type: 'landslide' }
+];
 
-// Postgres Setup
-const pgClient = new Client({ connectionString: 'postgresql://admin:password@localhost:5432/logistics' });
-pgClient.connect().then(() => console.log('Postgres connected')).catch(console.error);
+const vehicles = [
+  { id: 'TRUCK-NER-01', name: 'Medical Supply Truck', cargo: 'Medicines', capacity: 100, status: 'active' },
+  { id: 'TRUCK-NER-02', name: 'Food Relief Truck', cargo: 'Food Supplies', capacity: 150, status: 'active' },
+  { id: 'TRUCK-NER-03', name: 'Construction Materials', cargo: 'Building Materials', capacity: 200, status: 'active' }
+];
 
-// --- APIs ---
+// Helper to broadcast to SSE clients
+function broadcastSSE(event, data) {
+  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  for (const client of sseClients) {
+    client.write(payload);
+  }
+}
 
-// 1. Forward to Python PyVRP
-app.post('/api/route', async (req, res) => {
-    try {
-        const response = await fetch('http://localhost:8000/calculate_route', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(req.body)
-        });
-        const data = await response.json();
-        res.json(data);
-    } catch (e) {
-        res.status(500).json({ error: 'Python service down', details: e.message });
-    }
+// MQTT Broker Setup
+const mqttServer = net.createServer(aedes.handle);
+mqttServer.listen(MQTT_PORT, () => {
+  console.log(`[MQTT] Aedes broker running on port ${MQTT_PORT}`);
 });
 
-// 2. Zero-Network SMS Webhook (Twilio)
-app.post('/api/twilio/sms', async (req, res) => {
-    // Mock payload: "TRUCK_123,LAT:26.1,LNG:91.7,HAZARD:LANDSLIDE"
-    console.log('Zero-Network SMS Received:', req.body);
-    
-    const body = req.body.Body || req.body.body || '';
-    const parts = body.split(',');
-    
-    if (parts.length >= 4) {
-        const truckId = parts[0];
-        const lat = parseFloat(parts[1].split(':')[1]);
-        const lng = parseFloat(parts[2].split(':')[1]);
-        const hazard = parts[3].split(':')[1];
+aedes.on('publish', function (packet, client) {
+  if (!client) return; // internal messages
+
+  const topic = packet.topic;
+  if (topic.startsWith('gps/')) {
+    const vehicleId = topic.split('/')[1];
+    if (vehicleId) {
+      try {
+        const payload = JSON.parse(packet.payload.toString());
+        const { lat, lng, speed, heading, timestamp } = payload;
         
-        // Publish to dashboard via Redis PubSub
-        await redisClient.publish('dashboard-events', JSON.stringify({
-            type: 'ZERO_NETWORK_HAZARD',
-            truckId, lat, lng, hazard,
-            timestamp: Date.now()
-        }));
+        const posData = { lat, lng, speed, heading, timestamp: timestamp || Date.now() };
+        vehiclePositions.set(vehicleId, posData);
+        
+        const logEntry = { vehicleId, ...posData };
+        gpsLogs.push(logEntry);
+        
+        broadcastSSE('gps_update', logEntry);
+        
+        console.log(`[MQTT] Vehicle ${vehicleId} at (${lat}, ${lng})`);
+      } catch (err) {
+        console.error(`[MQTT] Failed to parse payload for ${vehicleId}:`, err);
+      }
     }
+  }
+});
+
+// Express Endpoints
+app.post('/api/route', (req, res) => {
+  const options = {
+    hostname: 'localhost',
+    port: 8000,
+    path: '/calculate_route',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  };
+
+  const proxyReq = http.request(options, (proxyRes) => {
+    let data = '';
+    proxyRes.on('data', (chunk) => { data += chunk; });
+    proxyRes.on('end', () => {
+      try {
+        res.status(proxyRes.statusCode).json(JSON.parse(data));
+      } catch (e) {
+        res.status(proxyRes.statusCode).send(data);
+      }
+    });
+  });
+
+  proxyReq.on('error', (e) => {
+    console.error(`Problem with request: ${e.message}`);
+    res.status(500).json({ error: e.message });
+  });
+
+  proxyReq.write(JSON.stringify(req.body));
+  proxyReq.end();
+});
+
+app.post('/api/sms-webhook', (req, res) => {
+  const { From, Body } = req.body;
+  if (!Body) {
+    return res.status(400).json({ error: 'Missing Body' });
+  }
+
+  // Body format: vehicleId|lat|lng|timestamp|status
+  const parts = Body.split('|');
+  if (parts.length >= 4) {
+    const vehicleId = parts[0];
+    const lat = parseFloat(parts[1]);
+    const lng = parseFloat(parts[2]);
+    const timestamp = parts[3] || new Date().toISOString();
+    const status = parts[4] || 'active';
+
+    const posData = { lat, lng, timestamp, status, source: 'sms' };
+    vehiclePositions.set(vehicleId, posData);
     
-    // Twilio expects XML response
-    res.set('Content-Type', 'text/xml');
-    res.status(200).send('<Response></Response>'); 
+    const logEntry = { vehicleId, ...posData };
+    gpsLogs.push(logEntry);
+    
+    broadcastSSE('sms_update', logEntry);
+    
+    console.log(`[SMS] Webhook received for ${vehicleId} at (${lat}, ${lng})`);
+    return res.json({ status: 'received', parsed: logEntry });
+  } else {
+    return res.status(400).json({ error: 'Invalid Body format' });
+  }
 });
 
-// --- Live 4G MQTT Tracking ---
-aedes.on('publish', async (packet, client) => {
-    if (client) {
-        const msg = packet.payload.toString();
-        console.log(`4G MQTT Tick [${client.id}]:`, msg);
-        try {
-            await redisClient.set(`truck:${client.id}`, msg);
-            await redisClient.publish('dashboard-events', JSON.stringify({
-                type: 'LIVE_LOCATION',
-                truckId: client.id,
-                data: JSON.parse(msg)
-            }));
-        } catch (e) {
-            console.error('MQTT parsing error:', e.message);
-        }
+app.get('/api/vehicles', (req, res) => {
+  const mergedVehicles = vehicles.map(v => {
+    const position = vehiclePositions.get(v.id) || null;
+    return { ...v, position };
+  });
+  res.json(mergedVehicles);
+});
+
+app.get('/api/hazard-zones', (req, res) => {
+  res.json(hazardZones);
+});
+
+app.get('/api/gps-logs', (req, res) => {
+  // last 100 entries, newest first
+  const latestLogs = gpsLogs.slice(-100).reverse();
+  res.json(latestLogs);
+});
+
+app.get('/api/stats', (req, res) => {
+  const now = Date.now();
+  let activeVehicles = 0;
+  for (const pos of vehiclePositions.values()) {
+    // Check if position was updated in the last 60 seconds
+    const posTime = typeof pos.timestamp === 'string' ? new Date(pos.timestamp).getTime() : pos.timestamp;
+    if (now - posTime < 60000) {
+      activeVehicles++;
     }
+  }
+
+  res.json({
+    totalVehicles: vehicles.length,
+    activeVehicles,
+    hazardZones: hazardZones.length,
+    totalGpsLogs: gpsLogs.length,
+    uptime: process.uptime()
+  });
 });
 
-const HTTP_PORT = 3000;
-const MQTT_PORT = 1883;
+app.get('/api/stream', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*'
+  });
 
-app.listen(HTTP_PORT, () => console.log(`Node Express API on port ${HTTP_PORT}`));
-server.listen(MQTT_PORT, () => console.log(`MQTT Broker on port ${MQTT_PORT}`));
+  // Send initial data
+  const mergedVehicles = vehicles.map(v => {
+    const position = vehiclePositions.get(v.id) || null;
+    return { ...v, position };
+  });
+  res.write(`event: init\ndata: ${JSON.stringify(mergedVehicles)}\n\n`);
+
+  sseClients.add(res);
+
+  req.on('close', () => {
+    sseClients.delete(res);
+  });
+});
+
+// Keepalive ping for SSE
+setInterval(() => {
+  for (const client of sseClients) {
+    client.write(`event: ping\ndata: {"time":${Date.now()}}\n\n`);
+  }
+}, 15000);
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'node-backend',
+    mqtt: 'running',
+    uptime: process.uptime()
+  });
+});
+
+app.listen(PORT, () => {
+  console.log(`[Express] Node.js backend listening on port ${PORT}`);
+});

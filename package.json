@@ -1,5 +1,15 @@
 {
+  "name": "ner-logistics-simulation",
+  "version": "1.0.0",
+  "description": "Simulation runner for NER Logistics Platform",
+  "main": "simulate.js",
+  "scripts": {
+    "simulate": "node simulate.js",
+    "start:python": "cd backend-python && source venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8000",
+    "start:node": "cd backend-node && node index.js",
+    "start:dashboard": "cd web-dashboard && npm run dev"
+  },
   "dependencies": {
-    "mqtt": "^5.15.2"
+    "mqtt": "^5.10.0"
   }
 }
